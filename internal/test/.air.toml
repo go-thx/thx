@@ -1,0 +1,64 @@
+# Config file for [Air](https://github.com/air-verse/air) in TOML format.
+
+root = "."
+testdata_dir = "testdata"
+tmp_dir = ".airtmp"
+
+[build]
+# Just a plain old shell command. You could use `make` as well.
+cmd = "go build -gcflags 'all=-N -l' -o ./.airtmp/thxtest ."
+# Binary file yields from `cmd`.
+entrypoint = "./.airtmp/thxtest"
+# Customize binary, can setup environment variables when run your app.
+full_bin = "./.airtmp/thxtest"
+# Add additional arguments when running binary (bin/full_bin).
+args_bin = []
+# Watch these filename extensions.
+include_ext = ["go"]
+# Watch these directories if specified.
+include_dir = []
+# Ignore these filename extensions or directories.
+exclude_dir = ["./.airtmp", "vendor", "testdata"]
+# Exclude files.
+exclude_file = []
+# Exclude specific regular expressions.
+exclude_regex = [".*_test.go", ".*/mock/.*.go"]
+# Exclude unchanged files.
+exclude_unchanged = false
+# Follow symlink for directories.
+follow_symlink = true
+# This log file is placed in your tmp_dir.
+log = "air.log"
+# It's not necessary to trigger build each time file changes if it's too frequent.
+delay = 100 # ms
+# Stop running old binary when build errors occur.
+stop_on_error = false
+# Send interrupt signal before killing process.
+send_interrupt = true
+# Delay after sending interrupt signal.
+kill_delay = 30000 # ms
+
+[log]
+# Show log time.
+time = false
+# Only show main log (silences watcher, build, runner)
+main_only = true
+# Silence all logs produced by air
+silent = true
+
+[color]
+app = ""
+build = "yellow"
+main = "magenta"
+runner = "green"
+watcher = "cyan"
+
+[misc]
+# Delete .airtmp directory on exit.
+clean_on_exit = false
+
+[screen]
+# Clear terminal screen on rebuild.
+clear_on_rebuild = false
+# Keep scroll.
+keep_scroll = true

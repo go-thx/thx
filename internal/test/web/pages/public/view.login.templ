@@ -1,0 +1,12 @@
+package public
+
+import "thx.test/gen/routes"
+
+templ loginView(props loginProps) {
+	<div>PUBLIC</div>
+
+	<form hx-post={ routes.Public().PostLogin().Path() }>
+        <input type="hidden" name="path" value={ props.form.Path } />
+        <button type="submit">Login</button>
+	</form>
+}

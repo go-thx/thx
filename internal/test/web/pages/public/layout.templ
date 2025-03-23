@@ -1,0 +1,11 @@
+package public
+
+import "github.com/go-thx/thx"
+
+templ layout(content templ.Component) {
+    {{ ctx = thx.ViewContext(ctx) }}
+
+	<div class="layout">
+		@content
+	</div>
+}

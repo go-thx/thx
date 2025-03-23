@@ -1,0 +1,11 @@
+package private
+
+import "thx.test/gen/routes"
+
+templ index() {
+	<div>PRIVATE</div>
+
+	<form hx-get={ routes.Public().GetLogout().Path()}>
+        <button type="submit">Logout</button>
+	</form>
+}
