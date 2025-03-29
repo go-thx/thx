@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -45,6 +47,7 @@ type Context interface {
 
 	HTMX() HTMX
 
+	WithLayouts() Context
 	WithoutLayouts() Context
 	IsWithoutLayouts() bool
 }
@@ -140,6 +143,11 @@ func (c *contextImpl) IsAuthorized() bool {
 
 // TEMPL
 
+func (c *contextImpl) WithLayouts() Context {
+	c.noLayouts = false
+	return c
+}
+
 func (c *contextImpl) WithoutLayouts() Context {
 	c.noLayouts = true
 	return c
@@ -158,19 +166,70 @@ func (c *contextImpl) HTMX() HTMX {
 	}
 }
 
+// Swap strategies for HX-Reswap / hx-swap.
+const (
+	SwapInnerHTML   = "innerHTML"
+	SwapOuterHTML   = "outerHTML"
+	SwapBeforeBegin = "beforebegin"
+	SwapAfterBegin  = "afterbegin"
+	SwapBeforeEnd   = "beforeend"
+	SwapAfterEnd    = "afterend"
+	SwapDelete      = "delete"
+	SwapNone        = "none"
+)
+
+// StatusStopPolling is the HTTP status code (286) that tells HTMX to stop
+// polling when using hx-trigger="every Xs".
+const StatusStopPolling = 286
+
+// LocationOptions configures a client-side HTMX navigation via HX-Location.
+type LocationOptions struct {
+	Path    string `json:"path"`
+	Source  string `json:"source,omitempty"`
+	Event   string `json:"event,omitempty"`
+	Handler string `json:"handler,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Swap    string `json:"swap,omitempty"`
+	Values  any    `json:"values,omitempty"`
+	Headers any    `json:"headers,omitempty"`
+	Select  string `json:"select,omitempty"`
+}
+
 type HTMX interface {
+	// Request headers (read from browser)
+
 	IsRequest() bool
 	IsBoosted() bool
+	CurrentURL() string
+	IsHistoryRestoreRequest() bool
+	Prompt() string
+	Target() string
+	TriggerID() string
+	TriggerName() string
+
+	// Response headers (write to browser)
+
+	Location(url string)
+	LocationWithOptions(opts LocationOptions) error
 	PushURL(url string)
+	Redirect(url string)
+	Refresh()
 	ReplaceURL(url string)
+	Reswap(strategy string)
+	Retarget(selector string)
+	Reselect(selector string)
+	StopPolling()
 	Trigger(event string, data any)
-	Retarget(target string)
+	TriggerAfterSettle(event string, data any)
+	TriggerAfterSwap(event string, data any)
 }
 
 type htmx struct {
 	req *http.Request
 	res http.ResponseWriter
 }
+
+// Request headers
 
 func (hx *htmx) IsRequest() bool {
 	return hx.req.Header.Get("HX-Request") == "true"
@@ -180,21 +239,134 @@ func (hx *htmx) IsBoosted() bool {
 	return hx.req.Header.Get("HX-Boosted") == "true"
 }
 
+func (hx *htmx) CurrentURL() string {
+	return hx.req.Header.Get("HX-Current-URL")
+}
+
+func (hx *htmx) IsHistoryRestoreRequest() bool {
+	return hx.req.Header.Get("HX-History-Restore-Request") == "true"
+}
+
+func (hx *htmx) Prompt() string {
+	return hx.req.Header.Get("HX-Prompt")
+}
+
+func (hx *htmx) Target() string {
+	return hx.req.Header.Get("HX-Target")
+}
+
+func (hx *htmx) TriggerID() string {
+	return hx.req.Header.Get("HX-Trigger")
+}
+
+func (hx *htmx) TriggerName() string {
+	return hx.req.Header.Get("HX-Trigger-Name")
+}
+
+// Response headers
+
+func (hx *htmx) Location(url string) {
+	hx.res.Header().Set("HX-Location", url)
+}
+
+func (hx *htmx) LocationWithOptions(opts LocationOptions) error {
+	b, err := json.Marshal(opts)
+	if err != nil {
+		return fmt.Errorf("failed to marshal HX-Location options: %w", err)
+	}
+	hx.res.Header().Set("HX-Location", string(b))
+	return nil
+}
+
 func (hx *htmx) PushURL(url string) {
 	hx.res.Header().Set("HX-Push-Url", url)
+}
+
+func (hx *htmx) Redirect(url string) {
+	hx.res.Header().Set("HX-Redirect", url)
+}
+
+func (hx *htmx) Refresh() {
+	hx.res.Header().Set("HX-Refresh", "true")
 }
 
 func (hx *htmx) ReplaceURL(url string) {
 	hx.res.Header().Set("HX-Replace-Url", url)
 }
 
-func (hx *htmx) Trigger(event string, data any) {
-	// TODO: https://vimperium.studio/articles/htmx-notifications
-	hx.res.Header().Set("HX-Trigger", event)
+func (hx *htmx) Reswap(strategy string) {
+	hx.res.Header().Set("HX-Reswap", strategy)
 }
 
-func (hx *htmx) Retarget(target string) {
-	hx.res.Header().Set("HX-Retarget", target)
+func (hx *htmx) Retarget(selector string) {
+	hx.res.Header().Set("HX-Retarget", selector)
+}
+
+func (hx *htmx) Reselect(selector string) {
+	hx.res.Header().Set("HX-Reselect", selector)
+}
+
+func (hx *htmx) StopPolling() {
+	hx.res.WriteHeader(StatusStopPolling)
+}
+
+func (hx *htmx) Trigger(event string, data any) {
+	setTriggerHeader(hx.res, "HX-Trigger", event, data)
+}
+
+func (hx *htmx) TriggerAfterSettle(event string, data any) {
+	setTriggerHeader(hx.res, "HX-Trigger-After-Settle", event, data)
+}
+
+func (hx *htmx) TriggerAfterSwap(event string, data any) {
+	setTriggerHeader(hx.res, "HX-Trigger-After-Swap", event, data)
+}
+
+func setTriggerHeader(res http.ResponseWriter, header, event string, data any) {
+	if data == nil {
+		existing := res.Header().Get(header)
+		if existing == "" {
+			res.Header().Set(header, event)
+			return
+		}
+
+		// Existing value might be plain string or JSON — normalize to JSON.
+		merged := parseTriggerHeader(existing)
+		merged[event] = ""
+		b, err := json.Marshal(merged)
+		if err != nil {
+			res.Header().Set(header, event)
+			return
+		}
+
+		res.Header().Set(header, string(b))
+		return
+	}
+
+	existing := res.Header().Get(header)
+	merged := parseTriggerHeader(existing)
+	merged[event] = data
+	b, err := json.Marshal(merged)
+	if err != nil {
+		res.Header().Set(header, event)
+		return
+	}
+
+	res.Header().Set(header, string(b))
+}
+
+func parseTriggerHeader(value string) map[string]any {
+	if value == "" {
+		return make(map[string]any)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal([]byte(value), &m); err != nil {
+		// Plain event name string — convert to map.
+		return map[string]any{value: ""}
+	}
+
+	return m
 }
 
 //
