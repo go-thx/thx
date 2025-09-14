@@ -120,6 +120,15 @@ func (r *route[Q, I, O]) Apply(router *Router) {
 
 		ctx := internal.NewContext(req, res)
 
+		htmx := ctx.HTMX()
+		if htmx.IsRequest() {
+			res.Header().Add("Vary", "HX-Request")
+
+			if !htmx.IsBoosted() {
+				ctx.WithoutLayouts()
+			}
+		}
+
 		var out O
 
 		if r.getHandler != nil {

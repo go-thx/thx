@@ -5,8 +5,8 @@ tasks:
   ide-setup:
     desc: "Setup the project. Installs dependencies for IDE and more."
     cmds:
-      - go install golang.org/x/tools/gopls@v0.17.1
-      - go install github.com/a-h/templ/cmd/templ@v0.3.833
+      - go install golang.org/x/tools/gopls@v0.20.0
+      - go install github.com/a-h/templ/cmd/templ@v0.3.943
       - ln -s (which gopls) ~/.local/bin/gopls
 
   run:
@@ -19,7 +19,7 @@ tasks:
 
   go-run:
     cmds:
-      - cd internal/test && go run github.com/air-verse/air@v1.61.7
+      - cd internal/test && go run github.com/air-verse/air@v1.63.0
 
   templ-build:
     hidden: true
@@ -28,7 +28,7 @@ tasks:
     cmds:
       - >
         cd internal/test
-        && go run github.com/a-h/templ/cmd/templ@v0.3.833 generate
+        && go run github.com/a-h/templ/cmd/templ@v0.3.943 generate
 
   templ-watch:
     hidden: true
@@ -39,4 +39,4 @@ tasks:
     cmds:
       - >
         cd internal/test
-        && go run github.com/a-h/templ/cmd/templ@v0.3.833 generate --watch --proxy=http://localhost:8642 --proxyport=9753 --open-browser=false
+        && go run github.com/a-h/templ/cmd/templ@v0.3.943 generate --watch --proxy=http://localhost:8642 --proxyport=9753 --open-browser=false

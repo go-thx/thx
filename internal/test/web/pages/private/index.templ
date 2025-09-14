@@ -8,4 +8,18 @@ templ index() {
 	<form hx-get={ routes.Public().GetLogout().Path()}>
         <button type="submit">Logout</button>
 	</form>
+
+	<h3>SSE Test</h3>
+	<div hx-ext="sse" sse-connect="/events" sse-swap="time">
+		<div id="sse-output">Waiting for events...</div>
+	</div>
+
+	<h3>WebSocket Test</h3>
+	<div hx-ext="ws" ws-connect="/ws">
+		<form ws-send>
+			<input name="message" type="text" placeholder="Type a message..." />
+			<button type="submit">Send</button>
+		</form>
+		<div id="ws-output"></div>
+	</div>
 }

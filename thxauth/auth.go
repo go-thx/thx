@@ -99,7 +99,7 @@ func Guard(routes []thx.Route, opts ...AuthOption) thx.Routes {
 				return
 			}
 
-			if authOpts.redirectQueryParam != "" {
+			if authOpts.redirectQueryParam != "" && req.URL.RequestURI() != "/" {
 				query := redirectURL.Query()
 				query.Add(authOpts.redirectQueryParam, req.URL.RequestURI())
 				redirectURL.RawQuery = query.Encode()
