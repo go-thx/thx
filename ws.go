@@ -6,42 +6,26 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"runtime/debug"
 
 	"github.com/coder/websocket"
 	"github.com/go-thx/thx/internal"
-	"github.com/go-playground/validator/v10"
-	"github.com/gorilla/schema"
-	"github.com/pkg/errors"
 )
 
 type WSHandler[Q any] func(ctx Context, query Q, conn *WSConn)
 
-type WSOption func(*wsOptions)
-
-type wsOptions struct {
-	acceptOptions *websocket.AcceptOptions
-}
-
-func WSAcceptOptions(opts *websocket.AcceptOptions) WSOption {
-	return func(o *wsOptions) {
-		o.acceptOptions = opts
-	}
-}
-
-func WS[Q any](path string, handler WSHandler[Q], opts ...WSOption) Route {
-	o := &wsOptions{
-		acceptOptions: &websocket.AcceptOptions{
+func WS[Q any](path string, handler WSHandler[Q], acceptOpts ...*websocket.AcceptOptions) Route {
+	var opts *websocket.AcceptOptions
+	if len(acceptOpts) > 0 {
+		opts = acceptOpts[0]
+	} else {
+		opts = &websocket.AcceptOptions{
 			InsecureSkipVerify: true,
-		},
-	}
-	for _, opt := range opts {
-		opt(o)
+		}
 	}
 	return &wsRoute[Q]{
 		path:          path,
 		handler:       handler,
-		acceptOptions: o.acceptOptions,
+		acceptOptions: opts,
 	}
 }
 
@@ -55,47 +39,10 @@ func (r *wsRoute[Q]) Apply(router *Router) {
 	path := filepath.Join(router.Path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
-		defer func() {
-			if reason := recover(); reason != nil {
-				if err, ok := reason.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-					panic(reason)
-				}
+		defer handlePanic(path, router, res, req)
 
-				slog.ErrorContext(req.Context(), "Recovered from panic.",
-					"path", path,
-					"reason", reason,
-					"stack", string(debug.Stack()),
-				)
-			}
-		}()
-
-		decoder := schema.NewDecoder()
-
-		var queryData Q
-
-		if err := decoder.Decode(&queryData, req.URL.Query()); err != nil {
-			slog.WarnContext(req.Context(), "Failed to decode query params.",
-				"error", err,
-			)
-			res.WriteHeader(http.StatusBadRequest)
-			if router.ErrorHandler != nil {
-				ctx := internal.NewContext(req, res)
-				router.ErrorHandler(ctx, res, req, err)
-			}
-			return
-		}
-
-		validate := validator.New(validator.WithRequiredStructEnabled())
-
-		if err := validate.StructCtx(req.Context(), queryData); err != nil {
-			slog.WarnContext(req.Context(), "Validation of query params failed.",
-				"error", err,
-			)
-			res.WriteHeader(http.StatusBadRequest)
-			if router.ErrorHandler != nil {
-				ctx := internal.NewContext(req, res)
-				router.ErrorHandler(ctx, res, req, err)
-			}
+		queryData, ok := decodeQuery[Q](req, res, router)
+		if !ok {
 			return
 		}
 
@@ -139,12 +86,8 @@ func (c *WSConn) ReadJSON(ctx context.Context, v any) error {
 	return json.Unmarshal(data, v)
 }
 
-func (c *WSConn) WriteText(ctx context.Context, msg string) error {
+func (c *WSConn) Write(ctx context.Context, msg string) error {
 	return c.conn.Write(ctx, websocket.MessageText, []byte(msg))
-}
-
-func (c *WSConn) WriteHTML(ctx context.Context, html string) error {
-	return c.conn.Write(ctx, websocket.MessageText, []byte(html))
 }
 
 func (c *WSConn) WriteJSON(ctx context.Context, v any) error {

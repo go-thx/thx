@@ -30,10 +30,10 @@ func New() *Controller {
 
 func (c *Controller) Routes() thx.Routes {
 	return thx.Routes{
-		thx.WithPathAndLayout("/login", layout, []thx.Route{
+		thx.WithPath("/login", thx.WithLayout(layout, thx.Routes{
 			thx.Get("/", c.getLogin),
 			thx.Post("/", c.postLogin),
-		}),
+		})),
 
 		thx.Get("/logout", c.getLogout),
 	}

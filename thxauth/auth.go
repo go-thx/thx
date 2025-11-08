@@ -116,7 +116,7 @@ func Guard(routes []thx.Route, opts ...AuthOption) thx.Routes {
 			r.Apply(&thx.Router{
 				Mux:             guardedMux,
 				Path:            router.Path,
-				Layout:          router.Layout,
+				Layouts:         router.Layouts,
 				ErrorHandler:    router.ErrorHandler,
 				NotFoundHandler: router.NotFoundHandler,
 			})
@@ -125,44 +125,3 @@ func Guard(routes []thx.Route, opts ...AuthOption) thx.Routes {
 		router.Mux.Handle(router.Path+"/", middleware(guardedMux))
 	})}
 }
-
-// guardedRoute wraps a route and applies authentication middleware
-//type guardedRoute struct {
-//	inner      thx.Route
-//	middleware func(http.Handler) http.Handler
-//}
-//
-//func (g *guardedRoute) Apply(router *thx.Router) {
-//	// Create a middleware-wrapped mux wrapper
-//	wrappedMux := &authServeMux{
-//		mux:        router.Mux,
-//		middleware: g.middleware,
-//	}
-//
-//	// Apply the inner route with the wrapped mux
-//	g.inner.Apply(&thx.Router{
-//		Mux:             wrappedMux.mux,
-//		Path:            router.Path,
-//		Layout:          router.Layout,
-//		ErrorHandler:    router.ErrorHandler,
-//		NotFoundHandler: router.NotFoundHandler,
-//	})
-//
-//	// Note: The middleware is applied via wrappedMux.HandleFunc which wraps handlers before registration
-//}
-//
-//// authServeMux wraps http.ServeMux to apply middleware to all registered handlers
-//type authServeMux struct {
-//	mux        *http.ServeMux
-//	middleware func(http.Handler) http.Handler
-//}
-//
-//func (a *authServeMux) Handle(pattern string, handler http.Handler) {
-//	a.mux.Handle(pattern, a.middleware(handler))
-//}
-//
-//func (a *authServeMux) HandleFunc(pattern string, handler func(http.ResponseWriter, *http.Request)) {
-//	a.mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
-//		a.middleware(http.HandlerFunc(handler)).ServeHTTP(w, r)
-//	})
-//}

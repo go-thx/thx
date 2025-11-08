@@ -3,7 +3,6 @@ package thx
 import (
 	"context"
 	"io"
-	"log/slog"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -46,10 +45,6 @@ func BadRequest() View {
 }
 
 func Error(err error) View {
-	slog.Error("Controller returned an error.",
-		"error", err,
-	)
-
 	return &errorView{
 		status:  http.StatusInternalServerError,
 		message: http.StatusText(http.StatusInternalServerError),

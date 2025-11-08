@@ -56,7 +56,7 @@ func (c *Controller) ws(ctx thx.Context, _ struct{}, conn *thx.WSConn) {
 
 		text, _ := msg["message"].(string)
 		html := fmt.Sprintf(`<div id="ws-output">echo: %s</div>`, text)
-		if err := conn.WriteHTML(ctx, html); err != nil {
+		if err := conn.Write(ctx, html); err != nil {
 			return
 		}
 	}

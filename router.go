@@ -11,8 +11,8 @@ type Route interface {
 type Router struct {
 	Mux *http.ServeMux
 
-	Path         string
-	Layout       LayoutWhat
+	Path    string
+	Layouts []Layout
 	ErrorHandler func(Context, http.ResponseWriter, *http.Request, error)
 
 	NotFoundHandler func(http.ResponseWriter, *http.Request)

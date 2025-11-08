@@ -1,4 +1,6 @@
 .DS_Store
 .idea
 
+.ide
 internal/test/.airtmp
+cmd

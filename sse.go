@@ -6,12 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
-	"runtime/debug"
 
 	"github.com/go-thx/thx/internal"
-	"github.com/go-playground/validator/v10"
-	"github.com/gorilla/schema"
-	"github.com/pkg/errors"
 )
 
 type SSEHandler[Q any] func(ctx Context, query Q, stream EventStream)
@@ -37,19 +33,7 @@ func (r *sseRoute[Q]) Apply(router *Router) {
 	path := filepath.Join(router.Path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
-		defer func() {
-			if reason := recover(); reason != nil {
-				if err, ok := reason.(error); ok && errors.Is(err, http.ErrAbortHandler) {
-					panic(reason)
-				}
-
-				slog.ErrorContext(req.Context(), "Recovered from panic.",
-					"path", path,
-					"reason", reason,
-					"stack", string(debug.Stack()),
-				)
-			}
-		}()
+		defer handlePanic(path, router, res, req)
 
 		flusher, ok := res.(http.Flusher)
 		if !ok {
@@ -60,33 +44,8 @@ func (r *sseRoute[Q]) Apply(router *Router) {
 			return
 		}
 
-		decoder := schema.NewDecoder()
-
-		var queryData Q
-
-		if err := decoder.Decode(&queryData, req.URL.Query()); err != nil {
-			slog.WarnContext(req.Context(), "Failed to decode query params.",
-				"error", err,
-			)
-			res.WriteHeader(http.StatusBadRequest)
-			if router.ErrorHandler != nil {
-				ctx := internal.NewContext(req, res)
-				router.ErrorHandler(ctx, res, req, err)
-			}
-			return
-		}
-
-		validate := validator.New(validator.WithRequiredStructEnabled())
-
-		if err := validate.StructCtx(req.Context(), queryData); err != nil {
-			slog.WarnContext(req.Context(), "Validation of query params failed.",
-				"error", err,
-			)
-			res.WriteHeader(http.StatusBadRequest)
-			if router.ErrorHandler != nil {
-				ctx := internal.NewContext(req, res)
-				router.ErrorHandler(ctx, res, req, err)
-			}
+		queryData, ok := decodeQuery[Q](req, res, router)
+		if !ok {
 			return
 		}
 
