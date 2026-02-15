@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
 	"github.com/go-thx/thx/thxauth"
 	"thx.test/web/auth"
@@ -15,17 +16,19 @@ func New() *Controller {
 	return &Controller{}
 }
 
-func (c *Controller) Routes() []thx.Route {
+func (c *Controller) Routes() thx.Routes {
 	return thx.WithLayout(layout,
-		thx.Routes{
-			thx.Get("/", thxauth.Get(c.index)),
-			thx.SSE("/events", c.events),
-			thx.WS("/ws", c.ws),
-		},
+		thx.Get("/", thxauth.Get(c.getIndex)),
+		thx.SSE("/events", c.events),
+		thx.WS("/ws", c.ws),
+
+		thx.HandleNotFound(func(ctx thx.Context) templ.Component {
+			return notFound()
+		}),
 	)
 }
 
-func (c *Controller) index(ctx auth.Context, _ struct{}) thx.View {
+func (c *Controller) getIndex(ctx auth.Context, _ struct{}) thx.View {
 	return thx.Render(ctx, index())
 }
 

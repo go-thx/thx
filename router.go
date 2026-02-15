@@ -11,16 +11,15 @@ type Route interface {
 type Router struct {
 	Mux *http.ServeMux
 
-	Path    string
-	Layouts []Layout
-	ErrorHandler func(Context, http.ResponseWriter, *http.Request, error)
+	Path       string
+	Layouts    []Layout
+	Middleware func(http.Handler) http.Handler
 
+	ErrorHandler    func(Context, http.ResponseWriter, *http.Request, error)
 	NotFoundHandler func(http.ResponseWriter, *http.Request)
 }
 
-// New creates a new router with the given routes.
-// It returns an *http.ServeMux that can be used to serve HTTP requests.
-func New(routes ...Route) *http.ServeMux {
+func New(routes ...Route) http.Handler {
 	mux := http.NewServeMux()
 
 	router := &Router{
@@ -32,5 +31,13 @@ func New(routes ...Route) *http.ServeMux {
 		route.Apply(router)
 	}
 
-	return mux
+	var handler http.Handler = wrapMux(mux, func() func(http.ResponseWriter, *http.Request) {
+		return router.NotFoundHandler
+	})
+
+	if router.Middleware != nil {
+		handler = router.Middleware(handler)
+	}
+
+	return handler
 }

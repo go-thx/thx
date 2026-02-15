@@ -4,7 +4,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
+	"thx.test/gen/routes"
 )
 
 const (
@@ -36,12 +38,16 @@ func (c *Controller) Routes() thx.Routes {
 		})),
 
 		thx.Get("/logout", c.getLogout),
+
+		thx.HandleNotFound(func(ctx thx.Context) templ.Component {
+			return notFound()
+		}),
 	}
 }
 
 func (c *Controller) getLogin(ctx thx.Context, query loginQuery) thx.View {
 	if ctx.IsAuthorized() {
-		return ctx.Redirect("/") // webpath.Dashboard().Get()
+		return ctx.Redirect(routes.Private().GetIndex().Path())
 	}
 
 	props := loginProps{

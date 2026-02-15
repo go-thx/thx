@@ -14,7 +14,7 @@
 <p align="center">
     <a href="https://go.dev/doc/devel/release"><img src="https://img.shields.io/badge/go-v1.25.1-informational" alt="Go v1.25.1"></a>
     &nbsp;
-    <a href="https://github.com/a-h/templ"><img src="https://img.shields.io/badge/go--templ-v0.3.943-informational" alt="Go-Templ v0.3.943"></a>
+    <a href="https://github.com/a-h/templ"><img src="https://img.shields.io/badge/go--templ-v0.3.977-informational" alt="Go-Templ v0.3.977"></a>
     &nbsp;
     <a href="https://github.com/bigskysoftware/htmx"><img src="https://img.shields.io/badge/htmx-v2.0.7-informational" alt="HTMX v2.0.7"></a>
     &nbsp;

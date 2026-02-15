@@ -2,14 +2,16 @@ package thx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 
 	"github.com/go-thx/thx/internal"
-	"github.com/pkg/errors"
 
 	"github.com/a-h/templ"
 	"github.com/go-playground/validator/v10"
@@ -43,43 +45,60 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 
 		reasonErr, ok := reason.(error)
 		if !ok {
-			reasonErr = errors.New(fmt.Sprintf("panic: %v", reason))
+			reasonErr = fmt.Errorf("panic: %v", reason)
 		}
 
 		router.ErrorHandler(ctx, res, req, reasonErr)
 	}
 }
 
-func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Router) (Q, bool) {
-	decoder := schema.NewDecoder()
+var (
+	schemaDecoder = schema.NewDecoder()
+	validate      = validator.New(validator.WithRequiredStructEnabled())
+)
 
+func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
+	res.WriteHeader(http.StatusBadRequest)
+
+	if router.ErrorHandler != nil {
+		ctx := internal.NewContext(req, res)
+		router.ErrorHandler(ctx, res, req, err)
+	}
+}
+
+func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Router) (Q, bool) {
 	var queryData Q
 
-	if err := decoder.Decode(&queryData, req.URL.Query()); err != nil {
-		res.WriteHeader(http.StatusBadRequest)
-
-		if router.ErrorHandler != nil {
-			ctx := internal.NewContext(req, res)
-			router.ErrorHandler(ctx, res, req, err)
-		}
-
+	if err := schemaDecoder.Decode(&queryData, req.URL.Query()); err != nil {
+		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
 
-	validate := validator.New(validator.WithRequiredStructEnabled())
-
 	if err := validate.StructCtx(req.Context(), queryData); err != nil {
-		res.WriteHeader(http.StatusBadRequest)
-
-		if router.ErrorHandler != nil {
-			ctx := internal.NewContext(req, res)
-			router.ErrorHandler(ctx, res, req, err)
-		}
-
+		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
 
 	return queryData, true
+}
+
+func routePath(base, path string) string {
+	p := filepath.Join(base, path)
+	if p == "/" {
+		return "/{$}"
+	}
+	return p
+}
+
+func wrapMux(mux *http.ServeMux, notFound func() func(http.ResponseWriter, *http.Request)) http.Handler {
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		_, pattern := mux.Handler(req)
+		if pattern == "" {
+			notFound()(res, req)
+			return
+		}
+		mux.ServeHTTP(res, req)
+	})
 }
 
 type route[Q, I, O any] struct {
@@ -93,25 +112,12 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 	var in I
 
 	if err := req.ParseForm(); err != nil {
-		res.WriteHeader(http.StatusBadRequest)
-
-		if router.ErrorHandler != nil {
-			ctx := internal.NewContext(req, res)
-			router.ErrorHandler(ctx, res, req, err)
-		}
-
+		handleBadRequest(err, req, res, router)
 		return in, false
 	}
 
-	decoder := schema.NewDecoder()
-	if err := decoder.Decode(&in, req.PostForm); err != nil {
-		res.WriteHeader(http.StatusBadRequest)
-
-		if router.ErrorHandler != nil {
-			ctx := internal.NewContext(req, res)
-			router.ErrorHandler(ctx, res, req, err)
-		}
-
+	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
+		handleBadRequest(err, req, res, router)
 		return in, false
 	}
 
@@ -129,7 +135,7 @@ func applyLayouts(ctx internal.Context, comp templ.Component, layouts []Layout) 
 }
 
 func renderOutput[O any](out O, ctx internal.Context, router *Router, res http.ResponseWriter, accept string) {
-	if comp, ok := any(out).(templ.Component); ok && len(router.Layouts) > 0 {
+	if comp, ok := any(out).(templ.Component); ok {
 		if err := applyLayouts(ctx, comp, router.Layouts).Render(ctx, res); err != nil {
 			res.WriteHeader(http.StatusInternalServerError)
 		}
@@ -151,7 +157,7 @@ func renderOutput[O any](out O, ctx internal.Context, router *Router, res http.R
 }
 
 func (r *route[Q, I, O]) Apply(router *Router) {
-	path := filepath.Join(router.Path, r.path)
+	path := routePath(router.Path, r.path)
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
@@ -197,40 +203,112 @@ func (w Wrapper) Apply(router *Router) {
 	w(router)
 }
 
-func WithPath(path string, routes []Route) Routes {
-	var out Routes
+func use(mw func(http.Handler) http.Handler) Route {
+	return Wrapper(func(r *Router) {
+		if r.Middleware != nil {
+			prev := r.Middleware
+			r.Middleware = func(h http.Handler) http.Handler {
+				return prev(mw(h))
+			}
+		} else {
+			r.Middleware = mw
+		}
+	})
+}
 
-	for _, route := range routes {
-		out = append(out, Wrapper(func(r *Router) {
-			route.Apply(&Router{
-				Mux:             r.Mux,
-				Path:            filepath.Join(r.Path, path),
-				Layouts:         r.Layouts,
-				ErrorHandler:    r.ErrorHandler,
-				NotFoundHandler: r.NotFoundHandler,
-			})
-		}))
-	}
-
+func WithMiddleware(mw func(http.Handler) http.Handler, routes ...Route) Routes {
+	out := make(Routes, 0, len(routes)+1)
+	out = append(out, use(mw))
+	out = append(out, routes...)
 	return out
 }
 
-func WithLayout(layout Layout, routes []Route) Routes {
-	var out Routes
-
-	for _, route := range routes {
-		out = append(out, Wrapper(func(r *Router) {
-			route.Apply(&Router{
-				Mux:             r.Mux,
-				Path:            r.Path,
-				Layouts:         append([]Layout{layout}, r.Layouts...),
-				ErrorHandler:    r.ErrorHandler,
-				NotFoundHandler: r.NotFoundHandler,
-			})
-		}))
+func Chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(h http.Handler) http.Handler {
+		for i := len(mws) - 1; i >= 0; i-- {
+			h = mws[i](h)
+		}
+		return h
 	}
+}
 
-	return out
+func WithPath(path string, routes ...Route) Routes {
+	return Routes{Wrapper(func(r *Router) {
+		subMux := http.NewServeMux()
+
+		subRouter := &Router{
+			Mux:          subMux,
+			Layouts:      r.Layouts,
+			ErrorHandler: r.ErrorHandler,
+		}
+
+		for _, route := range routes {
+			route.Apply(subRouter)
+		}
+
+		prefix := filepath.Join(r.Path, path)
+
+		inner := wrapMux(subMux, func() func(http.ResponseWriter, *http.Request) {
+			if subRouter.NotFoundHandler != nil {
+				return subRouter.NotFoundHandler
+			}
+			return r.NotFoundHandler
+		})
+
+		// Subtree: strip prefix then route via sub-mux
+		var subtreeHandler http.Handler = http.StripPrefix(prefix, inner)
+
+		// Exact prefix: rewrite to "/" then route via sub-mux
+		var exactHandler http.Handler = http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+			req2 := req.Clone(req.Context())
+			req2.URL = &url.URL{}
+			*req2.URL = *req.URL
+			req2.URL.Path = "/"
+			inner.ServeHTTP(res, req2)
+		})
+
+		// Middleware wraps outside StripPrefix — sees original request paths
+		if subRouter.Middleware != nil {
+			subtreeHandler = subRouter.Middleware(subtreeHandler)
+			exactHandler = subRouter.Middleware(exactHandler)
+		}
+
+		// Subtree: redirect trailing slash, then delegate
+		r.Mux.Handle(prefix+"/", http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+			if strings.HasSuffix(req.URL.Path, "/") {
+				target := strings.TrimSuffix(req.URL.Path, "/")
+				if req.URL.RawQuery != "" {
+					target += "?" + req.URL.RawQuery
+				}
+				http.Redirect(res, req, target, http.StatusMovedPermanently)
+				return
+			}
+			subtreeHandler.ServeHTTP(res, req)
+		}))
+
+		// Exact prefix
+		r.Mux.Handle(prefix, exactHandler)
+	})}
+}
+
+func WithLayout(layout Layout, routes ...Route) Routes {
+	return Routes{Wrapper(func(r *Router) {
+		inner := &Router{
+			Mux:          r.Mux,
+			Path:         r.Path,
+			Layouts:      append([]Layout{layout}, r.Layouts...),
+			ErrorHandler: r.ErrorHandler,
+			Middleware:   r.Middleware,
+		}
+
+		for _, route := range routes {
+			route.Apply(inner)
+		}
+
+		r.ErrorHandler = inner.ErrorHandler
+		r.NotFoundHandler = inner.NotFoundHandler
+		r.Middleware = inner.Middleware
+	})}
 }
 
 type GetHandler[Q, O any] func(Context, Q) O
@@ -244,8 +322,6 @@ func (r Routes) Apply(router *Router) {
 	}
 }
 
-// 404
-
 func HandleNotFound(comp Component) Route {
 	return &notFound{comp: comp}
 }
@@ -255,9 +331,6 @@ type notFound struct {
 }
 
 func (n *notFound) Apply(router *Router) {
-	// Note: http.ServeMux doesn't have a built-in NotFound handler like chi
-	// Custom NotFound handling would need to be implemented by wrapping the mux
-	// For now, we store the handler in the Router for potential use by the application
 	router.NotFoundHandler = func(res http.ResponseWriter, req *http.Request) {
 		ctx := internal.NewContext(req, res)
 
@@ -268,8 +341,6 @@ func (n *notFound) Apply(router *Router) {
 		}
 	}
 }
-
-// 500
 
 func HandleInternalError(comp Component) Route {
 	return &internalError{comp: comp}

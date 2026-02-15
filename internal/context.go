@@ -100,6 +100,7 @@ func (c *contextImpl) SetCookie(name, value string, maxAge time.Duration, secure
 	cookie := &http.Cookie{
 		Name:     name,
 		Value:    value,
+		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, // lax mode allows authenticated GET requests (linking) from external sites
 		Secure:   secure,
@@ -115,6 +116,7 @@ func (c *contextImpl) SetCookie(name, value string, maxAge time.Duration, secure
 func (c *contextImpl) DelCookie(name string) Context {
 	cookie := &http.Cookie{
 		Name:   name,
+		Path:   "/",
 		MaxAge: -1,
 	}
 
@@ -141,8 +143,6 @@ func (c *contextImpl) IsAuthorized() bool {
 	return c.Value(contextKeyAuth{}) != nil
 }
 
-// TEMPL
-
 func (c *contextImpl) WithLayouts() Context {
 	c.noLayouts = false
 	return c
@@ -156,8 +156,6 @@ func (c *contextImpl) WithoutLayouts() Context {
 func (c *contextImpl) IsWithoutLayouts() bool {
 	return c.noLayouts
 }
-
-// HTMX
 
 func (c *contextImpl) HTMX() HTMX {
 	return &htmx{
@@ -229,8 +227,6 @@ type htmx struct {
 	res http.ResponseWriter
 }
 
-// Request headers
-
 func (hx *htmx) IsRequest() bool {
 	return hx.req.Header.Get("HX-Request") == "true"
 }
@@ -262,8 +258,6 @@ func (hx *htmx) TriggerID() string {
 func (hx *htmx) TriggerName() string {
 	return hx.req.Header.Get("HX-Trigger-Name")
 }
-
-// Response headers
 
 func (hx *htmx) Location(url string) {
 	hx.res.Header().Set("HX-Location", url)
@@ -369,11 +363,6 @@ func parseTriggerHeader(value string) map[string]any {
 	return m
 }
 
-//
-// -- AUTH
-//
-
-// contextKeyAuth is the context key for storing authenticated user/entity
 type contextKeyAuth struct{}
 
 func SetAuth[T any](ctx context.Context, auth T) context.Context {

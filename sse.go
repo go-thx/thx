@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 
 	"github.com/go-thx/thx/internal"
 )
@@ -30,7 +29,7 @@ type sseRoute[Q any] struct {
 }
 
 func (r *sseRoute[Q]) Apply(router *Router) {
-	path := filepath.Join(router.Path, r.path)
+	path := routePath(router.Path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)

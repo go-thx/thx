@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 
 	"github.com/coder/websocket"
 	"github.com/go-thx/thx/internal"
@@ -36,7 +35,7 @@ type wsRoute[Q any] struct {
 }
 
 func (r *wsRoute[Q]) Apply(router *Router) {
-	path := filepath.Join(router.Path, r.path)
+	path := routePath(router.Path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)

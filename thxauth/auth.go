@@ -9,46 +9,26 @@ import (
 	"github.com/go-thx/thx/internal"
 )
 
-//
-// -- HANDLER
-//
-
 type GetHandler[T, Q, O any] func(Context[T], Q) O
 type Handler[T, Q, I, O any] func(Context[T], Q, I) O
 
 func Get[T, Q, O any](handler GetHandler[T, Q, O]) thx.GetHandler[Q, O] {
 	return func(ctx internal.Context, query Q) O {
-		authCtx := internal.NewAuthContext[T](ctx)
-
-		if !authCtx.IsAuthorized() {
-			ctx.SetStatus(http.StatusUnauthorized)
-
-			var out O
-			return out // TODO: nil deref?
+		if !ctx.IsAuthorized() {
+			panic("thxauth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
-
-		return handler(authCtx, query)
+		return handler(internal.NewAuthContext[T](ctx), query)
 	}
 }
 
 func Route[T, Q, I, O any](handler Handler[T, Q, I, O]) thx.Handler[Q, I, O] {
 	return func(ctx thx.Context, query Q, in I) O {
-		authCtx := internal.NewAuthContext[T](ctx)
-
-		if !authCtx.IsAuthorized() {
-			ctx.SetStatus(http.StatusUnauthorized)
-
-			var out O
-			return out // TODO: nil deref?
+		if !ctx.IsAuthorized() {
+			panic("thxauth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
-
-		return handler(authCtx, query, in)
+		return handler(internal.NewAuthContext[T](ctx), query, in)
 	}
 }
-
-//
-// -- ROUTE
-//
 
 type AuthOption func(*authOptions)
 
@@ -69,8 +49,9 @@ func RedirectWithCurrentPath(param string) AuthOption {
 	}
 }
 
-// Guard prevents unauthorized access to all given routes.
-func Guard(routes []thx.Route, opts ...AuthOption) thx.Routes {
+// WithGuard prevents unauthorized access to all given routes
+// and scopes them under the given path.
+func WithGuard(path string, routes []thx.Route, opts ...AuthOption) thx.Routes {
 	authOpts := &authOptions{}
 
 	for _, opt := range opts {
@@ -109,19 +90,5 @@ func Guard(routes []thx.Route, opts ...AuthOption) thx.Routes {
 		})
 	}
 
-	return thx.Routes{thx.Wrapper(func(router *thx.Router) {
-		guardedMux := http.NewServeMux()
-
-		for _, r := range routes {
-			r.Apply(&thx.Router{
-				Mux:             guardedMux,
-				Path:            router.Path,
-				Layouts:         router.Layouts,
-				ErrorHandler:    router.ErrorHandler,
-				NotFoundHandler: router.NotFoundHandler,
-			})
-		}
-
-		router.Mux.Handle(router.Path+"/", middleware(guardedMux))
-	})}
+	return thx.WithPath(path, thx.WithMiddleware(middleware, routes...))
 }

@@ -16,7 +16,7 @@ func Empty() View {
 }
 
 func Render(ctx Context, comp templ.Component) View {
-	return &baseView{ctx, comp}
+	return &baseView{ctx: ctx, comp: comp}
 }
 
 type baseView struct {
@@ -24,41 +24,29 @@ type baseView struct {
 	comp templ.Component
 }
 
-func (v *baseView) Render(ctx context.Context, w io.Writer) error {
-	return v.comp.Render(ctx, w)
+func (v *baseView) Render(_ context.Context, w io.Writer) error {
+	return v.comp.Render(v.ctx, w)
 }
 
 func (v *baseView) Out(_ context.Context, w http.ResponseWriter) error {
 	return v.comp.Render(v.ctx, w)
 }
 
-func Partial(ctx internal.Context, comp templ.Component) View {
+func Partial(ctx Context, comp templ.Component) View {
 	ctx.WithoutLayouts()
 	return Render(ctx, comp)
 }
 
-func BadRequest() View {
-	return &errorView{
-		status:  http.StatusBadRequest,
-		message: http.StatusText(http.StatusBadRequest),
-	}
+func Status(code int) View {
+	return &statusView{code: code}
 }
 
-func Error(err error) View {
-	return &errorView{
-		status:  http.StatusInternalServerError,
-		message: http.StatusText(http.StatusInternalServerError),
-	}
+type statusView struct {
+	code int
 }
 
-type errorView struct {
-	status  int
-	message string
-}
-
-func (e *errorView) Out(_ context.Context, w http.ResponseWriter) error {
-	http.Error(w, e.message, e.status)
-
+func (s *statusView) Out(_ context.Context, w http.ResponseWriter) error {
+	http.Error(w, http.StatusText(s.code), s.code)
 	return nil
 }
 
