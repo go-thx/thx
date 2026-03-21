@@ -6,7 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
-	"github.com/go-thx/thx/thxauth"
+	thxauth "github.com/go-thx/thx/auth"
 	"thx.test/gen/routes"
 	"thx.test/web/pages/private"
 	"thx.test/web/pages/public"

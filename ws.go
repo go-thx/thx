@@ -97,6 +97,37 @@ func (c *WSConn) WriteJSON(ctx context.Context, v any) error {
 	return c.conn.Write(ctx, websocket.MessageText, b)
 }
 
+// WSRequest is the HTMX 4.0 WebSocket request envelope sent by the client.
+type WSRequest struct {
+	Type      string         `json:"type"`
+	RequestID string         `json:"request_id"`
+	Event     string         `json:"event"`
+	Path      string         `json:"path"`
+	Headers   map[string]any `json:"headers"`
+	Values    map[string]any `json:"values"`
+}
+
+func (c *WSConn) ReadHTMX(ctx context.Context) (WSRequest, error) {
+	var req WSRequest
+	if err := c.ReadJSON(ctx, &req); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+// WSMessage is the HTMX 4.0 WebSocket response envelope sent to the client.
+type WSMessage struct {
+	Channel string `json:"channel,omitempty"`
+	Format  string `json:"format,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Swap    string `json:"swap,omitempty"`
+	Payload string `json:"payload"`
+}
+
+func (c *WSConn) WriteHTMX(ctx context.Context, msg WSMessage) error {
+	return c.WriteJSON(ctx, msg)
+}
+
 func (c *WSConn) Close(reason string) error {
 	return c.conn.Close(websocket.StatusNormalClosure, reason)
 }

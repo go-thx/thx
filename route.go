@@ -173,9 +173,9 @@ func (r *route[Q, I, O]) Apply(router *Router) {
 
 		htmx := ctx.HTMX()
 		if htmx.IsRequest() {
-			res.Header().Add("Vary", "HX-Request")
+			res.Header().Add("Vary", "HX-Request, HX-Request-Type")
 
-			if !htmx.IsBoosted() {
+			if htmx.IsPartial() {
 				ctx.WithoutLayouts()
 			}
 		}

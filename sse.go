@@ -12,8 +12,9 @@ import (
 type SSEHandler[Q any] func(ctx Context, query Q, stream EventStream)
 
 type EventStream interface {
-	Send(event string, data string) error
-	SendJSON(event string, data any) error
+	Send(data string) error
+	SendEvent(event string, data string) error
+	SendJSON(data any) error
 }
 
 func SSE[Q any](path string, handler SSEHandler[Q]) Route {
@@ -70,7 +71,15 @@ type eventStream struct {
 	flusher http.Flusher
 }
 
-func (s *eventStream) Send(event string, data string) error {
+func (s *eventStream) Send(data string) error {
+	if _, err := fmt.Fprintf(s.res, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	s.flusher.Flush()
+	return nil
+}
+
+func (s *eventStream) SendEvent(event string, data string) error {
 	if _, err := fmt.Fprintf(s.res, "event: %s\ndata: %s\n\n", event, data); err != nil {
 		return err
 	}
@@ -78,10 +87,10 @@ func (s *eventStream) Send(event string, data string) error {
 	return nil
 }
 
-func (s *eventStream) SendJSON(event string, data any) error {
+func (s *eventStream) SendJSON(data any) error {
 	b, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal SSE data: %w", err)
 	}
-	return s.Send(event, string(b))
+	return s.Send(string(b))
 }

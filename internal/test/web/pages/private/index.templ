@@ -10,13 +10,13 @@ templ index() {
 	</form>
 
 	<h3>SSE Test</h3>
-	<div hx-ext="sse" sse-connect={ routes.Private().Events().Path() } sse-swap="time">
-		<div id="sse-output">Waiting for events...</div>
+	<div hx-sse:connect={ routes.Private().Events().Path() }>
+		Waiting for events...
 	</div>
 
 	<h3>WebSocket Test</h3>
-	<div hx-ext="ws" ws-connect={ routes.Private().Ws().Path() }>
-		<form ws-send>
+	<div hx-ws:connect={ routes.Private().Ws().Path() }>
+		<form hx-ws:send>
 			<input name="message" type="text" placeholder="Type a message..." />
 			<button type="submit">Send</button>
 		</form>

@@ -1,4 +1,4 @@
-package thxauth
+package auth
 
 import (
 	"log/slog"
@@ -15,7 +15,7 @@ type Handler[T, Q, I, O any] func(Context[T], Q, I) O
 func Get[T, Q, O any](handler GetHandler[T, Q, O]) thx.GetHandler[Q, O] {
 	return func(ctx internal.Context, query Q) O {
 		if !ctx.IsAuthorized() {
-			panic("thxauth: unauthorized request reached auth handler (missing WithGuard?)")
+			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
 		return handler(internal.NewAuthContext[T](ctx), query)
 	}
@@ -24,38 +24,38 @@ func Get[T, Q, O any](handler GetHandler[T, Q, O]) thx.GetHandler[Q, O] {
 func Route[T, Q, I, O any](handler Handler[T, Q, I, O]) thx.Handler[Q, I, O] {
 	return func(ctx thx.Context, query Q, in I) O {
 		if !ctx.IsAuthorized() {
-			panic("thxauth: unauthorized request reached auth handler (missing WithGuard?)")
+			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
 		return handler(internal.NewAuthContext[T](ctx), query, in)
 	}
 }
 
-type AuthOption func(*authOptions)
+type GuardOption func(*guardOptions)
 
-type authOptions struct {
+type guardOptions struct {
 	redirectUnauthorized string
 	redirectQueryParam   string
 }
 
-func RedirectUnauthorized(to string) AuthOption {
-	return func(opts *authOptions) {
+func RedirectUnauthorized(to string) GuardOption {
+	return func(opts *guardOptions) {
 		opts.redirectUnauthorized = to
 	}
 }
 
-func RedirectWithCurrentPath(param string) AuthOption {
-	return func(opts *authOptions) {
+func RedirectWithCurrentPath(param string) GuardOption {
+	return func(opts *guardOptions) {
 		opts.redirectQueryParam = param
 	}
 }
 
 // WithGuard prevents unauthorized access to all given routes
 // and scopes them under the given path.
-func WithGuard(path string, routes []thx.Route, opts ...AuthOption) thx.Routes {
-	authOpts := &authOptions{}
+func WithGuard(path string, routes []thx.Route, opts ...GuardOption) thx.Routes {
+	guardOpts := &guardOptions{}
 
 	for _, opt := range opts {
-		opt(authOpts)
+		opt(guardOpts)
 	}
 
 	middleware := func(h http.Handler) http.Handler {
@@ -65,12 +65,12 @@ func WithGuard(path string, routes []thx.Route, opts ...AuthOption) thx.Routes {
 				return
 			}
 
-			if authOpts.redirectUnauthorized == "" {
+			if guardOpts.redirectUnauthorized == "" {
 				res.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			redirectURL, err := url.Parse(authOpts.redirectUnauthorized)
+			redirectURL, err := url.Parse(guardOpts.redirectUnauthorized)
 			if err != nil {
 				slog.ErrorContext(req.Context(), "Failed to parse redirect URL.",
 					"error", err,
@@ -80,9 +80,9 @@ func WithGuard(path string, routes []thx.Route, opts ...AuthOption) thx.Routes {
 				return
 			}
 
-			if authOpts.redirectQueryParam != "" && req.URL.RequestURI() != "/" {
+			if guardOpts.redirectQueryParam != "" && req.URL.RequestURI() != "/" {
 				query := redirectURL.Query()
-				query.Add(authOpts.redirectQueryParam, req.URL.RequestURI())
+				query.Add(guardOpts.redirectQueryParam, req.URL.RequestURI())
 				redirectURL.RawQuery = query.Encode()
 			}
 

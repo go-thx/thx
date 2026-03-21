@@ -6,7 +6,7 @@ import (
 
 	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
-	"github.com/go-thx/thx/thxauth"
+	thxauth "github.com/go-thx/thx/auth"
 	"thx.test/web/auth"
 )
 
@@ -43,7 +43,7 @@ func (c *Controller) events(ctx thx.Context, _ struct{}, stream thx.EventStream)
 			return
 		case <-ticker.C:
 			i++
-			if err := stream.Send("time", fmt.Sprintf("tick %d", i)); err != nil {
+			if err := stream.Send(fmt.Sprintf("<span>tick %d</span>", i)); err != nil {
 				return
 			}
 		}
@@ -52,14 +52,18 @@ func (c *Controller) events(ctx thx.Context, _ struct{}, stream thx.EventStream)
 
 func (c *Controller) ws(ctx thx.Context, _ struct{}, conn *thx.WSConn) {
 	for {
-		var msg map[string]any
-		if err := conn.ReadJSON(ctx, &msg); err != nil {
+		req, err := conn.ReadHTMX(ctx)
+		if err != nil {
 			return
 		}
 
-		text, _ := msg["message"].(string)
-		html := fmt.Sprintf(`<div id="ws-output">echo: %s</div>`, text)
-		if err := conn.Write(ctx, html); err != nil {
+		text, _ := req.Values["message"].(string)
+
+		if err := conn.WriteHTMX(ctx, thx.WSMessage{
+			Target:  "#ws-output",
+			Swap:    "innerHTML",
+			Payload: fmt.Sprintf("echo: %s", text),
+		}); err != nil {
 			return
 		}
 	}

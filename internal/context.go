@@ -47,6 +47,8 @@ type Context interface {
 
 	HTMX() HTMX
 
+	SetValue(key, val any)
+
 	WithLayouts() Context
 	WithoutLayouts() Context
 	IsWithoutLayouts() bool
@@ -143,6 +145,10 @@ func (c *contextImpl) IsAuthorized() bool {
 	return c.Value(contextKeyAuth{}) != nil
 }
 
+func (c *contextImpl) SetValue(key, val any) {
+	c.Context = context.WithValue(c.Context, key, val)
+}
+
 func (c *contextImpl) WithLayouts() Context {
 	c.noLayouts = false
 	return c
@@ -174,6 +180,9 @@ const (
 	SwapAfterEnd    = "afterend"
 	SwapDelete      = "delete"
 	SwapNone        = "none"
+	SwapInnerMorph  = "innerMorph"
+	SwapOuterMorph  = "outerMorph"
+	SwapTextContent = "textContent"
 )
 
 // StatusStopPolling is the HTTP status code (286) that tells HTMX to stop
@@ -194,18 +203,13 @@ type LocationOptions struct {
 }
 
 type HTMX interface {
-	// Request headers (read from browser)
-
 	IsRequest() bool
+	IsPartial() bool
 	IsBoosted() bool
 	CurrentURL() string
 	IsHistoryRestoreRequest() bool
-	Prompt() string
+	Source() string
 	Target() string
-	TriggerID() string
-	TriggerName() string
-
-	// Response headers (write to browser)
 
 	Location(url string)
 	LocationWithOptions(opts LocationOptions) error
@@ -218,8 +222,6 @@ type HTMX interface {
 	Reselect(selector string)
 	StopPolling()
 	Trigger(event string, data any)
-	TriggerAfterSettle(event string, data any)
-	TriggerAfterSwap(event string, data any)
 }
 
 type htmx struct {
@@ -229,6 +231,10 @@ type htmx struct {
 
 func (hx *htmx) IsRequest() bool {
 	return hx.req.Header.Get("HX-Request") == "true"
+}
+
+func (hx *htmx) IsPartial() bool {
+	return hx.req.Header.Get("HX-Request-Type") == "partial"
 }
 
 func (hx *htmx) IsBoosted() bool {
@@ -243,20 +249,12 @@ func (hx *htmx) IsHistoryRestoreRequest() bool {
 	return hx.req.Header.Get("HX-History-Restore-Request") == "true"
 }
 
-func (hx *htmx) Prompt() string {
-	return hx.req.Header.Get("HX-Prompt")
+func (hx *htmx) Source() string {
+	return hx.req.Header.Get("HX-Source")
 }
 
 func (hx *htmx) Target() string {
 	return hx.req.Header.Get("HX-Target")
-}
-
-func (hx *htmx) TriggerID() string {
-	return hx.req.Header.Get("HX-Trigger")
-}
-
-func (hx *htmx) TriggerName() string {
-	return hx.req.Header.Get("HX-Trigger-Name")
 }
 
 func (hx *htmx) Location(url string) {
@@ -306,14 +304,6 @@ func (hx *htmx) StopPolling() {
 
 func (hx *htmx) Trigger(event string, data any) {
 	setTriggerHeader(hx.res, "HX-Trigger", event, data)
-}
-
-func (hx *htmx) TriggerAfterSettle(event string, data any) {
-	setTriggerHeader(hx.res, "HX-Trigger-After-Settle", event, data)
-}
-
-func (hx *htmx) TriggerAfterSwap(event string, data any) {
-	setTriggerHeader(hx.res, "HX-Trigger-After-Swap", event, data)
 }
 
 func setTriggerHeader(res http.ResponseWriter, header, event string, data any) {

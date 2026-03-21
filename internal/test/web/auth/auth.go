@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"github.com/go-thx/thx/thxauth"
+	thxauth "github.com/go-thx/thx/auth"
 	"thx.test/model"
 )
 

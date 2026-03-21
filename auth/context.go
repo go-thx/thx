@@ -1,4 +1,4 @@
-package thxauth
+package auth
 
 import "github.com/go-thx/thx/internal"
 
