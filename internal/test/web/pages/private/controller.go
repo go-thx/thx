@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"net/http"
+
 	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
 	thxauth "github.com/go-thx/thx/auth"
@@ -16,9 +18,14 @@ func New() *Controller {
 	return &Controller{}
 }
 
+type userQuery struct {
+	Tab string `schema:"tab"`
+}
+
 func (c *Controller) Routes() thx.Routes {
 	return thx.WithLayout(layout,
 		thx.Get("/", thxauth.Get(c.getIndex)),
+		thx.Get("/users/{id}", thxauth.Get(c.getUser)),
 		thx.SSE("/events", c.events),
 		thx.WS("/ws", c.ws),
 
@@ -30,6 +37,10 @@ func (c *Controller) Routes() thx.Routes {
 
 func (c *Controller) getIndex(ctx auth.Context, _ struct{}) thx.View {
 	return thx.Render(ctx, index())
+}
+
+func (c *Controller) getUser(_ auth.Context, _ userQuery) thx.View {
+	return thx.Status(http.StatusOK)
 }
 
 func (c *Controller) events(ctx thx.Context, _ struct{}, stream thx.EventStream) {

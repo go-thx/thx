@@ -19,6 +19,13 @@ tasks:
     cmds:
       - cd internal/test && go tool air
 
+  thx-gen:
+    desc: "Generate the thx code for the project."
+    cmds:
+      - >
+        cd internal/test
+        && go tool thx generate routes -o gen/routes ./web/...
+
   templ-build:
     hidden: true
     silent: true

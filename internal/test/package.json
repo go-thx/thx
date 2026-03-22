@@ -1,0 +1,6 @@
+{
+  "name": "thx-test",
+  "version": "0.0.0",
+  "private": true,
+  "web-types": "./web-types.json"
+}
