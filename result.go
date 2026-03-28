@@ -108,7 +108,7 @@ type statusResult struct {
 }
 
 func (s *statusResult) WriteResult(res http.ResponseWriter) error {
-	http.Error(res, http.StatusText(s.code), s.code)
+	res.WriteHeader(s.code)
 	return nil
 }
 

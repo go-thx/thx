@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -307,6 +308,9 @@ func (hx *htmx) Trigger(event string, data any) *TriggerChain {
 // Each method updates the header immediately. Calling the same modifier
 // type twice replaces the previous value (e.g. ScrollTop then ScrollBottom
 // keeps only ScrollBottom).
+// swapModOrder defines the output order for swap modifiers.
+var swapModOrder = []string{"swap", "settle", "transition", "ignoreTitle", "focus-scroll", "scroll", "show"}
+
 type SwapChain struct {
 	res      http.ResponseWriter
 	strategy string
@@ -324,8 +328,10 @@ func (s *SwapChain) set(prefix, value string) *SwapChain {
 
 func (s *SwapChain) write() {
 	val := s.strategy
-	for _, v := range s.mods {
-		val += " " + v
+	for _, key := range swapModOrder {
+		if v, ok := s.mods[key]; ok {
+			val += " " + v
+		}
 	}
 	s.res.Header().Set("HX-Reswap", val)
 }
@@ -416,6 +422,12 @@ func (t *TriggerChain) write() {
 	}
 	b, err := json.Marshal(t.events)
 	if err != nil {
+		// Fall back to comma-separated plain event names.
+		names := make([]string, 0, len(t.events))
+		for k := range t.events {
+			names = append(names, k)
+		}
+		t.res.Header().Set("HX-Trigger", strings.Join(names, ", "))
 		return
 	}
 	t.res.Header().Set("HX-Trigger", string(b))

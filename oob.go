@@ -2,7 +2,7 @@ package thx
 
 import (
 	"bytes"
-	"fmt"
+	"html"
 	"net/http"
 
 	"github.com/a-h/templ"
@@ -76,32 +76,17 @@ func renderOOBSwap(ctx internal.Context, res http.ResponseWriter, swap OOBSwap) 
 		return err
 	}
 
-	if swap.selector == "" {
-		// Simple OOB: inject hx-swap-oob="true" into the root element.
-		html := buf.Bytes()
-		idx := bytes.IndexByte(html, '>')
-		if idx == -1 {
-			_, err := res.Write(html)
-			return err
-		}
-
-		if _, err := res.Write(html[:idx]); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(res, ` hx-swap-oob="%s"`, swap.strategy); err != nil {
-			return err
-		}
-		_, err := res.Write(html[idx:])
-		return err
+	attr := html.EscapeString(swap.strategy)
+	if swap.selector != "" {
+		attr += ":" + html.EscapeString(swap.selector)
 	}
 
-	// Targeted OOB: wrap in a template element.
-	if _, err := fmt.Fprintf(res, `<template hx-swap-oob="%s:%s">`, swap.strategy, swap.selector); err != nil {
+	if _, err := res.Write([]byte(`<template hx-swap-oob="` + attr + `">`)); err != nil {
 		return err
 	}
 	if _, err := res.Write(buf.Bytes()); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(res, `</template>`)
+	_, err := res.Write([]byte(`</template>`))
 	return err
 }

@@ -69,8 +69,10 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 	entries := make(map[K]*cacheEntry)
 
 	return func(key K) templ.Component {
+		now := time.Now()
+
 		mu.RLock()
-		if e, ok := entries[key]; ok && time.Now().Before(e.expires) {
+		if e, ok := entries[key]; ok && now.Before(e.expires) {
 			cached := e.html
 			mu.RUnlock()
 			return rawComponent(cached)
@@ -80,7 +82,16 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 		mu.Lock()
 		defer mu.Unlock()
 
-		if e, ok := entries[key]; ok && time.Now().Before(e.expires) {
+		now = time.Now()
+
+		// Evict expired entries.
+		for k, e := range entries {
+			if now.After(e.expires) {
+				delete(entries, k)
+			}
+		}
+
+		if e, ok := entries[key]; ok && now.Before(e.expires) {
 			return rawComponent(e.html)
 		}
 
@@ -92,7 +103,7 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 
 		entries[key] = &cacheEntry{
 			html:    buf.Bytes(),
-			expires: time.Now().Add(ttl),
+			expires: now.Add(ttl),
 		}
 		return rawComponent(entries[key].html)
 	}
