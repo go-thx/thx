@@ -5,16 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
 // contextKeyThx is the context key for storing the thx Context itself.
 type contextKeyThx struct{}
 
-// FromContext retrieves the thx Context from a standard context.Context.
+// ViewContext retrieves the thx Context from a standard context.Context.
 // This is needed because templ wraps contexts with context.WithValue,
 // making direct type assertions fail.
-func FromContext(ctx context.Context) Context {
+// Panics if no thx Context is found — this indicates ViewContext was called
+// outside of a thx request lifecycle (e.g. in a cached component rendered
+// with context.Background).
+func ViewContext(ctx context.Context) Context {
 	if c, ok := ctx.(Context); ok {
 		return c
 	}
@@ -23,7 +27,7 @@ func FromContext(ctx context.Context) Context {
 		return c
 	}
 
-	return nil
+	panic("thx: ViewContext called with a context that has no thx Context — ensure this is called within a thx request handler")
 }
 
 // Compile-time type guard.
@@ -41,7 +45,7 @@ type Context interface {
 	DelCookie(name string) Context
 
 	SetStatus(status int)
-	Redirect(url string) View
+	Redirect(url string) Result
 
 	IsAuthorized() bool
 
@@ -131,14 +135,14 @@ func (c *contextImpl) SetStatus(status int) {
 	c.res.WriteHeader(status)
 }
 
-func (c *contextImpl) Redirect(url string) View {
+func (c *contextImpl) Redirect(url string) Result {
 	if c.req.Header.Get("HX-Request") == "true" {
 		c.res.Header().Set("HX-Redirect", url)
-		return Empty()
+		return &EmptyResult{}
 	}
 
 	http.Redirect(c.res, c.req, url, http.StatusSeeOther)
-	return Empty()
+	return &EmptyResult{}
 }
 
 func (c *contextImpl) IsAuthorized() bool {
@@ -170,21 +174,6 @@ func (c *contextImpl) HTMX() HTMX {
 	}
 }
 
-// Swap strategies for HX-Reswap / hx-swap.
-const (
-	SwapInnerHTML   = "innerHTML"
-	SwapOuterHTML   = "outerHTML"
-	SwapBeforeBegin = "beforebegin"
-	SwapAfterBegin  = "afterbegin"
-	SwapBeforeEnd   = "beforeend"
-	SwapAfterEnd    = "afterend"
-	SwapDelete      = "delete"
-	SwapNone        = "none"
-	SwapInnerMorph  = "innerMorph"
-	SwapOuterMorph  = "outerMorph"
-	SwapTextContent = "textContent"
-)
-
 // StatusStopPolling is the HTTP status code (286) that tells HTMX to stop
 // polling when using hx-trigger="every Xs".
 const StatusStopPolling = 286
@@ -214,14 +203,16 @@ type HTMX interface {
 	Location(url string)
 	LocationWithOptions(opts LocationOptions) error
 	PushURL(url string)
+	PreventPushURL()
 	Redirect(url string)
 	Refresh()
 	ReplaceURL(url string)
-	Reswap(strategy string)
+	PreventReplaceURL()
+	Reswap(strategy string) *SwapChain
 	Retarget(selector string)
 	Reselect(selector string)
 	StopPolling()
-	Trigger(event string, data any)
+	Trigger(event string, data any) *TriggerChain
 }
 
 type htmx struct {
@@ -274,6 +265,10 @@ func (hx *htmx) PushURL(url string) {
 	hx.res.Header().Set("HX-Push-Url", url)
 }
 
+func (hx *htmx) PreventPushURL() {
+	hx.res.Header().Set("HX-Push-Url", "false")
+}
+
 func (hx *htmx) Redirect(url string) {
 	hx.res.Header().Set("HX-Redirect", url)
 }
@@ -286,8 +281,13 @@ func (hx *htmx) ReplaceURL(url string) {
 	hx.res.Header().Set("HX-Replace-Url", url)
 }
 
-func (hx *htmx) Reswap(strategy string) {
+func (hx *htmx) PreventReplaceURL() {
+	hx.res.Header().Set("HX-Replace-Url", "false")
+}
+
+func (hx *htmx) Reswap(strategy string) *SwapChain {
 	hx.res.Header().Set("HX-Reswap", strategy)
+	return &SwapChain{res: hx.res, strategy: strategy}
 }
 
 func (hx *htmx) Retarget(selector string) {
@@ -302,41 +302,151 @@ func (hx *htmx) StopPolling() {
 	hx.res.WriteHeader(StatusStopPolling)
 }
 
-func (hx *htmx) Trigger(event string, data any) {
-	setTriggerHeader(hx.res, "HX-Trigger", event, data)
+func (hx *htmx) Trigger(event string, data any) *TriggerChain {
+	tc := &TriggerChain{res: hx.res}
+	return tc.Trigger(event, data)
 }
 
-func setTriggerHeader(res http.ResponseWriter, header, event string, data any) {
-	if data == nil {
-		existing := res.Header().Get(header)
-		if existing == "" {
-			res.Header().Set(header, event)
-			return
-		}
+// SwapChain provides fluent modifiers for the HX-Reswap header.
+// Each method updates the header immediately. Calling the same modifier
+// type twice replaces the previous value (e.g. ScrollTop then ScrollBottom
+// keeps only ScrollBottom).
+// swapModOrder defines the output order for swap modifiers.
+var swapModOrder = []string{"swap", "settle", "transition", "ignoreTitle", "focus-scroll", "scroll", "show"}
 
-		// Existing value might be plain string or JSON — normalize to JSON.
-		merged := parseTriggerHeader(existing)
-		merged[event] = ""
-		b, err := json.Marshal(merged)
-		if err != nil {
-			res.Header().Set(header, event)
-			return
-		}
+type SwapChain struct {
+	res      http.ResponseWriter
+	strategy string
+	mods     map[string]string
+}
 
-		res.Header().Set(header, string(b))
-		return
+func (s *SwapChain) set(prefix, value string) *SwapChain {
+	if s.mods == nil {
+		s.mods = make(map[string]string)
 	}
+	s.mods[prefix] = value
+	s.write()
+	return s
+}
 
-	existing := res.Header().Get(header)
-	merged := parseTriggerHeader(existing)
-	merged[event] = data
-	b, err := json.Marshal(merged)
+func (s *SwapChain) write() {
+	val := s.strategy
+	for _, key := range swapModOrder {
+		if v, ok := s.mods[key]; ok {
+			val += " " + v
+		}
+	}
+	s.res.Header().Set("HX-Reswap", val)
+}
+
+func (s *SwapChain) SwapDelay(d time.Duration) *SwapChain {
+	return s.set("swap", "swap:"+d.String())
+}
+
+func (s *SwapChain) SettleDelay(d time.Duration) *SwapChain {
+	return s.set("settle", "settle:"+d.String())
+}
+
+func (s *SwapChain) Transition() *SwapChain {
+	return s.set("transition", "transition:true")
+}
+
+func (s *SwapChain) IgnoreTitle() *SwapChain {
+	return s.set("ignoreTitle", "ignoreTitle:true")
+}
+
+func (s *SwapChain) FocusScroll(enabled bool) *SwapChain {
+	return s.set("focus-scroll", fmt.Sprintf("focus-scroll:%t", enabled))
+}
+
+func (s *SwapChain) ScrollTop(selector string) *SwapChain {
+	if selector == "" {
+		return s.set("scroll", "scroll:top")
+	}
+	return s.set("scroll", fmt.Sprintf("scroll:%s:top", selector))
+}
+
+func (s *SwapChain) ScrollBottom(selector string) *SwapChain {
+	if selector == "" {
+		return s.set("scroll", "scroll:bottom")
+	}
+	return s.set("scroll", fmt.Sprintf("scroll:%s:bottom", selector))
+}
+
+func (s *SwapChain) ScrollWindowTop() *SwapChain {
+	return s.set("scroll", "scroll:window:top")
+}
+
+func (s *SwapChain) ScrollWindowBottom() *SwapChain {
+	return s.set("scroll", "scroll:window:bottom")
+}
+
+func (s *SwapChain) ShowTop(selector string) *SwapChain {
+	if selector == "" {
+		return s.set("show", "show:top")
+	}
+	return s.set("show", fmt.Sprintf("show:%s:top", selector))
+}
+
+func (s *SwapChain) ShowBottom(selector string) *SwapChain {
+	if selector == "" {
+		return s.set("show", "show:bottom")
+	}
+	return s.set("show", fmt.Sprintf("show:%s:bottom", selector))
+}
+
+func (s *SwapChain) ShowWindowTop() *SwapChain {
+	return s.set("show", "show:window:top")
+}
+
+func (s *SwapChain) ShowWindowBottom() *SwapChain {
+	return s.set("show", "show:window:bottom")
+}
+
+func (s *SwapChain) ShowNone() *SwapChain {
+	return s.set("show", "show:none")
+}
+
+// TriggerChain provides fluent chaining for HX-Trigger events.
+// Each method updates the header immediately.
+type TriggerChain struct {
+	res    http.ResponseWriter
+	events map[string]any
+}
+
+func (t *TriggerChain) write() {
+	if len(t.events) == 1 {
+		for k, v := range t.events {
+			if v == nil {
+				t.res.Header().Set("HX-Trigger", k)
+				return
+			}
+		}
+	}
+	b, err := json.Marshal(t.events)
 	if err != nil {
-		res.Header().Set(header, event)
+		// Fall back to comma-separated plain event names.
+		names := make([]string, 0, len(t.events))
+		for k := range t.events {
+			names = append(names, k)
+		}
+		t.res.Header().Set("HX-Trigger", strings.Join(names, ", "))
 		return
 	}
+	t.res.Header().Set("HX-Trigger", string(b))
+}
 
-	res.Header().Set(header, string(b))
+func (t *TriggerChain) Trigger(event string, data any) *TriggerChain {
+	if t.events == nil {
+		t.events = parseTriggerHeader(t.res.Header().Get("HX-Trigger"))
+	}
+	if data == nil {
+		t.events[event] = nil
+	} else {
+		t.events[event] = data
+	}
+	t.write()
+	return t
 }
 
 func parseTriggerHeader(value string) map[string]any {
@@ -345,12 +455,18 @@ func parseTriggerHeader(value string) map[string]any {
 	}
 
 	var m map[string]any
-	if err := json.Unmarshal([]byte(value), &m); err != nil {
-		// Plain event name string — convert to map.
-		return map[string]any{value: ""}
+	if err := json.Unmarshal([]byte(value), &m); err == nil {
+		return m
 	}
 
-	return m
+	// Parse comma-separated plain event names.
+	result := make(map[string]any)
+	for _, name := range strings.Split(value, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			result[name] = nil
+		}
+	}
+	return result
 }
 
 type contextKeyAuth struct{}

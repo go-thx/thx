@@ -11,10 +11,9 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/go-thx/thx/internal"
-
 	"github.com/a-h/templ"
 	"github.com/go-playground/validator/v10"
+	"github.com/go-thx/thx/internal"
 	"github.com/gorilla/schema"
 )
 
@@ -69,7 +68,23 @@ func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, rou
 func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Router) (Q, bool) {
 	var queryData Q
 
-	if err := schemaDecoder.Decode(&queryData, req.URL.Query()); err != nil {
+	query := req.URL.Query()
+
+	// For HTMX requests, merge query params from HX-Current-URL as fallback.
+	// The XHR URL may differ from the browser's address bar.
+	if req.Header.Get("HX-Request") == "true" {
+		if hxURL := req.Header.Get("HX-Current-URL"); hxURL != "" {
+			if parsed, err := url.Parse(hxURL); err == nil {
+				for key, values := range parsed.Query() {
+					if _, exists := query[key]; !exists {
+						query[key] = values
+					}
+				}
+			}
+		}
+	}
+
+	if err := schemaDecoder.Decode(&queryData, query); err != nil {
 		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
@@ -101,15 +116,30 @@ func wrapMux(mux *http.ServeMux, notFound func() func(http.ResponseWriter, *http
 	})
 }
 
-type route[Q, I, O any] struct {
+type route[Q, I any] struct {
 	method     string
 	path       string
-	getHandler GetHandler[Q, O]
-	handler    Handler[Q, I, O]
+	getHandler GetHandler[Q]
+	handler    Handler[Q, I]
 }
 
 func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Router) (I, bool) {
 	var in I
+
+	ct := req.Header.Get("Content-Type")
+	if ct == "application/json" || strings.HasPrefix(ct, "application/json;") {
+		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+
+		if err := validate.StructCtx(req.Context(), in); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+
+		return in, true
+	}
 
 	if err := req.ParseForm(); err != nil {
 		handleBadRequest(err, req, res, router)
@@ -117,6 +147,11 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 	}
 
 	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
+		handleBadRequest(err, req, res, router)
+		return in, false
+	}
+
+	if err := validate.StructCtx(req.Context(), in); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
@@ -134,35 +169,20 @@ func applyLayouts(ctx internal.Context, comp templ.Component, layouts []Layout) 
 	return comp
 }
 
-func renderOutput[O any](out O, ctx internal.Context, router *Router, res http.ResponseWriter, accept string) {
-	if comp, ok := any(out).(templ.Component); ok {
-		if err := applyLayouts(ctx, comp, router.Layouts).Render(ctx, res); err != nil {
-			res.WriteHeader(http.StatusInternalServerError)
-		}
+func writeResult(res http.ResponseWriter, result Result) {
+	if result == nil {
 		return
 	}
-
-	if view, ok := any(out).(View); ok {
-		if err := view.Out(ctx, res); err != nil {
-			res.WriteHeader(http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if accept == "application/json" {
-		if err := json.NewEncoder(res).Encode(out); err != nil {
-			res.WriteHeader(http.StatusInternalServerError)
-		}
+	if err := result.WriteResult(res); err != nil {
+		res.WriteHeader(http.StatusInternalServerError)
 	}
 }
 
-func (r *route[Q, I, O]) Apply(router *Router) {
+func (r *route[Q, I]) Apply(router *Router) {
 	path := routePath(router.Path, r.path)
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
-
-		accept := req.Header.Get("Accept")
 
 		queryData, ok := decodeQuery[Q](req, res, router)
 		if !ok {
@@ -170,6 +190,7 @@ func (r *route[Q, I, O]) Apply(router *Router) {
 		}
 
 		ctx := internal.NewContext(req, res)
+		ctx.SetValue(layoutsKey{}, router.Layouts)
 
 		htmx := ctx.HTMX()
 		if htmx.IsRequest() {
@@ -181,7 +202,7 @@ func (r *route[Q, I, O]) Apply(router *Router) {
 		}
 
 		if r.getHandler != nil {
-			renderOutput(r.getHandler(ctx, queryData), ctx, router, res, accept)
+			writeResult(res, r.getHandler(ctx, queryData))
 			return
 		}
 
@@ -190,7 +211,7 @@ func (r *route[Q, I, O]) Apply(router *Router) {
 			return
 		}
 
-		renderOutput(r.handler(ctx, queryData, in), ctx, router, res, accept)
+		writeResult(res, r.handler(ctx, queryData, in))
 	})
 }
 
@@ -311,8 +332,8 @@ func WithLayout(layout Layout, routes ...Route) Routes {
 	})}
 }
 
-type GetHandler[Q, O any] func(Context, Q) O
-type Handler[Q, I, O any] func(Context, Q, I) O
+type GetHandler[Q any] func(Context, Q) Result
+type Handler[Q, I any] func(Context, Q, I) Result
 
 type Routes []Route
 

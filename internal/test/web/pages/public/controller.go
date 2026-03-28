@@ -45,7 +45,7 @@ func (c *Controller) Routes() thx.Routes {
 	}
 }
 
-func (c *Controller) getLogin(ctx thx.Context, query loginQuery) thx.View {
+func (c *Controller) getLogin(ctx thx.Context, query loginQuery) thx.Result {
 	if ctx.IsAuthorized() {
 		return ctx.Redirect(routes.Private().GetIndex().Path())
 	}
@@ -59,7 +59,7 @@ func (c *Controller) getLogin(ctx thx.Context, query loginQuery) thx.View {
 	return thx.Render(ctx, loginView(props))
 }
 
-func (c *Controller) postLogin(ctx thx.Context, _ struct{}, form loginForm) thx.View {
+func (c *Controller) postLogin(ctx thx.Context, _ struct{}, form loginForm) thx.Result {
 	ctx.SetCookie(authCookieName, "logged-in", time.Hour, false)
 
 	redirectURL := form.Path
@@ -71,6 +71,6 @@ func (c *Controller) postLogin(ctx thx.Context, _ struct{}, form loginForm) thx.
 	return ctx.Redirect(redirectURL)
 }
 
-func (c *Controller) getLogout(ctx thx.Context, _ struct{}) thx.View {
+func (c *Controller) getLogout(ctx thx.Context, _ struct{}) thx.Result {
 	return ctx.DelCookie(authCookieName).Redirect("/")
 }

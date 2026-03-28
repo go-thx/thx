@@ -9,11 +9,11 @@ import (
 	"github.com/go-thx/thx/internal"
 )
 
-type GetHandler[T, Q, O any] func(Context[T], Q) O
-type Handler[T, Q, I, O any] func(Context[T], Q, I) O
+type GetHandler[T, Q any] func(Context[T], Q) thx.Result
+type Handler[T, Q, I any] func(Context[T], Q, I) thx.Result
 
-func Get[T, Q, O any](handler GetHandler[T, Q, O]) thx.GetHandler[Q, O] {
-	return func(ctx internal.Context, query Q) O {
+func Get[T, Q any](handler GetHandler[T, Q]) thx.GetHandler[Q] {
+	return func(ctx internal.Context, query Q) thx.Result {
 		if !ctx.IsAuthorized() {
 			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
@@ -21,8 +21,8 @@ func Get[T, Q, O any](handler GetHandler[T, Q, O]) thx.GetHandler[Q, O] {
 	}
 }
 
-func Route[T, Q, I, O any](handler Handler[T, Q, I, O]) thx.Handler[Q, I, O] {
-	return func(ctx thx.Context, query Q, in I) O {
+func Route[T, Q, I any](handler Handler[T, Q, I]) thx.Handler[Q, I] {
+	return func(ctx thx.Context, query Q, in I) thx.Result {
 		if !ctx.IsAuthorized() {
 			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")
 		}

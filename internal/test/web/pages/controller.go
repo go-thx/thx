@@ -62,7 +62,7 @@ func (c *Controller) logger(next http.Handler) http.Handler {
 	})
 }
 
-func (c *Controller) getIndex(ctx thx.Context, _ struct{}) thx.View {
+func (c *Controller) getIndex(ctx thx.Context, _ struct{}) thx.Result {
 	return thx.Render(ctx, index())
 }
 

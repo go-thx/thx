@@ -35,12 +35,12 @@ func (c *Controller) Routes() thx.Routes {
 	)
 }
 
-func (c *Controller) getIndex(ctx auth.Context, _ struct{}) thx.View {
+func (c *Controller) getIndex(ctx auth.Context, _ struct{}) thx.Result {
 	return thx.Render(ctx, index())
 }
 
-func (c *Controller) getUser(_ auth.Context, _ userQuery) thx.View {
-	return thx.Status(http.StatusOK)
+func (c *Controller) getUser(_ auth.Context, _ userQuery) thx.Result {
+	return thx.Status(http.StatusOK).Empty()
 }
 
 func (c *Controller) events(ctx thx.Context, _ struct{}, stream thx.EventStream) {
