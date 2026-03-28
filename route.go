@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
-	"github.com/go-playground/validator/v10"
 	"github.com/go-thx/thx/internal"
 	"github.com/gorilla/schema"
 )
@@ -51,10 +50,7 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 	}
 }
 
-var (
-	schemaDecoder = schema.NewDecoder()
-	validate      = validator.New(validator.WithRequiredStructEnabled())
-)
+var schemaDecoder = schema.NewDecoder()
 
 func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
 	res.WriteHeader(http.StatusBadRequest)
@@ -85,11 +81,6 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 	}
 
 	if err := schemaDecoder.Decode(&queryData, query); err != nil {
-		handleBadRequest(err, req, res, router)
-		return queryData, false
-	}
-
-	if err := validate.StructCtx(req.Context(), queryData); err != nil {
 		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
@@ -133,11 +124,6 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 			return in, false
 		}
 
-		if err := validate.StructCtx(req.Context(), in); err != nil {
-			handleBadRequest(err, req, res, router)
-			return in, false
-		}
-
 		return in, true
 	}
 
@@ -147,11 +133,6 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 	}
 
 	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
-		handleBadRequest(err, req, res, router)
-		return in, false
-	}
-
-	if err := validate.StructCtx(req.Context(), in); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
