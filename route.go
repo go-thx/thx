@@ -127,9 +127,16 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 		return in, true
 	}
 
-	if err := req.ParseForm(); err != nil {
-		handleBadRequest(err, req, res, router)
-		return in, false
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := req.ParseMultipartForm(32 << 20); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+	} else {
+		if err := req.ParseForm(); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
 	}
 
 	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
