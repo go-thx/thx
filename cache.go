@@ -76,15 +76,13 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 
 		now = time.Now()
 
-		// Evict expired entries.
-		for k, e := range entries {
+		// Evict the looked-up key if expired.
+		if e, ok := entries[key]; ok {
 			if now.After(e.expires) {
-				delete(entries, k)
+				delete(entries, key)
+			} else {
+				return e.comp
 			}
-		}
-
-		if e, ok := entries[key]; ok && now.Before(e.expires) {
-			return e.comp
 		}
 
 		c := factory(key)
