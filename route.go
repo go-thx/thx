@@ -72,11 +72,13 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 
 	// For HTMX requests, merge query params from HX-Current-URL as fallback.
 	// The XHR URL may differ from the browser's address bar.
-	if hxURL := req.Header.Get("HX-Current-URL"); hxURL != "" {
-		if parsed, err := url.Parse(hxURL); err == nil {
-			for key, values := range parsed.Query() {
-				if _, exists := query[key]; !exists {
-					query[key] = values
+	if req.Header.Get("HX-Request") == "true" {
+		if hxURL := req.Header.Get("HX-Current-URL"); hxURL != "" {
+			if parsed, err := url.Parse(hxURL); err == nil {
+				for key, values := range parsed.Query() {
+					if _, exists := query[key]; !exists {
+						query[key] = values
+					}
 				}
 			}
 		}
@@ -168,6 +170,9 @@ func applyLayouts(ctx internal.Context, comp templ.Component, layouts []Layout) 
 }
 
 func writeResult(res http.ResponseWriter, result Result) {
+	if result == nil {
+		return
+	}
 	if err := result.WriteResult(res); err != nil {
 		res.WriteHeader(http.StatusInternalServerError)
 	}

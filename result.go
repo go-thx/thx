@@ -113,5 +113,5 @@ func (s *statusResult) WriteResult(res http.ResponseWriter) error {
 }
 
 func ViewContext(ctx context.Context) Context {
-	return internal.FromContext(ctx)
+	return internal.ViewContext(ctx)
 }

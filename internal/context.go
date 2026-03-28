@@ -12,10 +12,13 @@ import (
 // contextKeyThx is the context key for storing the thx Context itself.
 type contextKeyThx struct{}
 
-// FromContext retrieves the thx Context from a standard context.Context.
+// ViewContext retrieves the thx Context from a standard context.Context.
 // This is needed because templ wraps contexts with context.WithValue,
 // making direct type assertions fail.
-func FromContext(ctx context.Context) Context {
+// Panics if no thx Context is found — this indicates ViewContext was called
+// outside of a thx request lifecycle (e.g. in a cached component rendered
+// with context.Background).
+func ViewContext(ctx context.Context) Context {
 	if c, ok := ctx.(Context); ok {
 		return c
 	}
@@ -24,7 +27,7 @@ func FromContext(ctx context.Context) Context {
 		return c
 	}
 
-	return nil
+	panic("thx: ViewContext called with a context that has no thx Context — ensure this is called within a thx request handler")
 }
 
 // Compile-time type guard.
@@ -452,11 +455,18 @@ func parseTriggerHeader(value string) map[string]any {
 	}
 
 	var m map[string]any
-	if err := json.Unmarshal([]byte(value), &m); err != nil {
-		return map[string]any{value: nil}
+	if err := json.Unmarshal([]byte(value), &m); err == nil {
+		return m
 	}
 
-	return m
+	// Parse comma-separated plain event names.
+	result := make(map[string]any)
+	for _, name := range strings.Split(value, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			result[name] = nil
+		}
+	}
+	return result
 }
 
 type contextKeyAuth struct{}

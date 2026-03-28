@@ -1,9 +1,6 @@
 package thx
 
 import (
-	"bytes"
-	"context"
-	"io"
 	"sync"
 	"time"
 
@@ -11,9 +8,10 @@ import (
 )
 
 // Cached wraps a templ component factory with time-based caching.
-// The component is rendered once and the HTML output is reused for
-// the given duration. After expiry, the next render re-invokes the
-// factory to produce fresh output.
+// The factory is called once and the resulting component is reused for
+// the given duration. After expiry, the next call re-invokes the factory.
+// The component is rendered with the actual request context each time,
+// so thx.ViewContext and layouts work correctly.
 //
 //	var sidebar = thx.Cached(5*time.Minute, func() templ.Component {
 //	    return sidebarTemplate(loadNavItems())
@@ -23,41 +21,35 @@ import (
 func Cached(ttl time.Duration, factory func() templ.Component) func() templ.Component {
 	var (
 		mu      sync.RWMutex
-		html    []byte
+		comp    templ.Component
 		expires time.Time
 	)
 
 	return func() templ.Component {
 		mu.RLock()
 		if time.Now().Before(expires) {
-			cached := html
+			c := comp
 			mu.RUnlock()
-			return rawComponent(cached)
+			return c
 		}
 		mu.RUnlock()
 
 		mu.Lock()
 		defer mu.Unlock()
 
-		// Double-check after acquiring write lock.
 		if time.Now().Before(expires) {
-			return rawComponent(html)
-		}
-
-		var buf bytes.Buffer
-		comp := factory()
-		if err := comp.Render(context.Background(), &buf); err != nil {
 			return comp
 		}
 
-		html = buf.Bytes()
+		comp = factory()
 		expires = time.Now().Add(ttl)
-		return rawComponent(html)
+		return comp
 	}
 }
 
 // CachedByKey wraps a keyed templ component factory with per-key caching.
-// Each unique key gets its own cached HTML output with the given TTL.
+// Each unique key gets its own cached component with the given TTL.
+// Expired entries are evicted on cache miss.
 //
 //	var userCard = thx.CachedByKey[string](time.Minute, func(userID string) templ.Component {
 //	    return userCardTemplate(loadUser(userID))
@@ -73,9 +65,9 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 
 		mu.RLock()
 		if e, ok := entries[key]; ok && now.Before(e.expires) {
-			cached := e.html
+			c := e.comp
 			mu.RUnlock()
-			return rawComponent(cached)
+			return c
 		}
 		mu.RUnlock()
 
@@ -92,31 +84,19 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 		}
 
 		if e, ok := entries[key]; ok && now.Before(e.expires) {
-			return rawComponent(e.html)
+			return e.comp
 		}
 
-		var buf bytes.Buffer
-		comp := factory(key)
-		if err := comp.Render(context.Background(), &buf); err != nil {
-			return comp
-		}
-
+		c := factory(key)
 		entries[key] = &cacheEntry{
-			html:    buf.Bytes(),
+			comp:    c,
 			expires: now.Add(ttl),
 		}
-		return rawComponent(entries[key].html)
+		return c
 	}
 }
 
 type cacheEntry struct {
-	html    []byte
+	comp    templ.Component
 	expires time.Time
-}
-
-type rawComponent []byte
-
-func (r rawComponent) Render(_ context.Context, w io.Writer) error {
-	_, err := w.Write(r)
-	return err
 }
