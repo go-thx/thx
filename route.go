@@ -1,6 +1,7 @@
 package thx
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -123,12 +124,32 @@ type route[Q, I any] struct {
 func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Router) (I, bool) {
 	var in I
 
+	ct := req.Header.Get("Content-Type")
+	if ct == "application/json" || strings.HasPrefix(ct, "application/json;") {
+		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+
+		if err := validate.StructCtx(req.Context(), in); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+
+		return in, true
+	}
+
 	if err := req.ParseForm(); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
 
 	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
+		handleBadRequest(err, req, res, router)
+		return in, false
+	}
+
+	if err := validate.StructCtx(req.Context(), in); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
