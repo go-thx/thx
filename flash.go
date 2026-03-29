@@ -105,7 +105,7 @@ func writeFlashCookie(ctx Context, flashes []FlashMessage) {
 	if len(encoded) > flashMaxCookieLen {
 		return
 	}
-	ctx.SetCookie(flashCookieName, encoded, 0, ctx.Header("X-Forwarded-Proto") == "https")
+	ctx.SetCookie(flashCookieName, encoded, 0, false)
 }
 
 func clearFlashCookie(ctx Context) {
