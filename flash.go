@@ -3,10 +3,16 @@ package thx
 import (
 	"encoding/base64"
 	"encoding/json"
-	"net/http"
 )
 
-const flashCookieName = "__thx_flash"
+const (
+	flashCookieName = "__thx_flash"
+	flashMaxMessages = 10
+	flashMaxMessageLen = 500
+)
+
+type flashPendingKey struct{}
+type flashConsumedKey struct{}
 
 // FlashMessage is a one-time message that survives a redirect.
 type FlashMessage struct {
@@ -16,22 +22,47 @@ type FlashMessage struct {
 
 // Flash stores a flash message that will be available on the next request.
 // Typically called before a redirect. Common levels: "success", "error",
-// "info", "warning".
+// "info", "warning". Messages are truncated to 500 characters and at most
+// 10 messages are stored per redirect. Stored in an HttpOnly cookie.
 func Flash(ctx Context, level, message string) {
-	existing := readFlashCookie(ctx)
-	existing = append(existing, FlashMessage{Level: level, Message: message})
-	writeFlashCookie(ctx, existing)
+	if len(message) > flashMaxMessageLen {
+		message = message[:flashMaxMessageLen]
+	}
+
+	pending := getPending(ctx)
+	if len(pending) >= flashMaxMessages {
+		return
+	}
+
+	pending = append(pending, FlashMessage{Level: level, Message: message})
+	ctx.SetValue(flashPendingKey{}, pending)
+	writeFlashCookie(ctx, pending)
 }
 
 // Flashes reads and clears all flash messages. Returns nil if there are none.
-// Call this once per request — subsequent calls return nil.
+// The cookie is deleted after reading. Subsequent calls in the same request
+// return nil — flashes are consumed exactly once.
 func Flashes(ctx Context) []FlashMessage {
+	if _, ok := ctx.Value(flashConsumedKey{}).(bool); ok {
+		return nil
+	}
+
 	flashes := readFlashCookie(ctx)
+	ctx.SetValue(flashConsumedKey{}, true)
+
 	if len(flashes) == 0 {
 		return nil
 	}
+
 	clearFlashCookie(ctx)
 	return flashes
+}
+
+func getPending(ctx Context) []FlashMessage {
+	if pending, ok := ctx.Value(flashPendingKey{}).([]FlashMessage); ok {
+		return pending
+	}
+	return readFlashCookie(ctx)
 }
 
 func readFlashCookie(ctx Context) []FlashMessage {
@@ -41,10 +72,12 @@ func readFlashCookie(ctx Context) []FlashMessage {
 	}
 	data, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
+		clearFlashCookie(ctx)
 		return nil
 	}
 	var flashes []FlashMessage
 	if err := json.Unmarshal(data, &flashes); err != nil {
+		clearFlashCookie(ctx)
 		return nil
 	}
 	return flashes
@@ -74,9 +107,3 @@ func FlashInfo(ctx Context, message string) { Flash(ctx, "info", message) }
 
 // FlashWarning is a shorthand for Flash(ctx, "warning", message).
 func FlashWarning(ctx Context, message string) { Flash(ctx, "warning", message) }
-
-// HasFlashes checks if there are pending flash messages without consuming them.
-func HasFlashes(r *http.Request) bool {
-	cookie, err := r.Cookie(flashCookieName)
-	return err == nil && cookie.Value != ""
-}
