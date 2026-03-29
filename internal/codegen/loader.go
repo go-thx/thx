@@ -2,6 +2,9 @@ package codegen
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -16,7 +19,10 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 			packages.NeedTypesInfo |
 			packages.NeedImports |
 			packages.NeedDeps,
-		Dir: dir,
+		Dir:       dir,
+		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+			return parser.ParseFile(fset, filename, src, parser.ParseComments)
+		},
 	}
 
 	pkgs, err := packages.Load(cfg, pattern)
@@ -34,14 +40,29 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 		return nil, fmt.Errorf("package errors: %v", errs)
 	}
 
-	var filtered []*packages.Package
-	for _, pkg := range pkgs {
-		if importsThx(pkg) {
-			filtered = append(filtered, pkg)
+	// Collect all transitively imported packages so that
+	// references to non-thx packages (e.g. asset packages) can be resolved.
+	all := make(map[string]*packages.Package)
+	var collect func(p *packages.Package)
+	collect = func(p *packages.Package) {
+		if _, ok := all[p.PkgPath]; ok {
+			return
+		}
+		all[p.PkgPath] = p
+		for _, imp := range p.Imports {
+			collect(imp)
 		}
 	}
+	for _, p := range pkgs {
+		collect(p)
+	}
 
-	return filtered, nil
+	result := make([]*packages.Package, 0, len(all))
+	for _, p := range all {
+		result = append(result, p)
+	}
+
+	return result, nil
 }
 
 func importsThx(pkg *packages.Package) bool {

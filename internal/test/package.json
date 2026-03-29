@@ -2,5 +2,8 @@
   "name": "thx-test",
   "version": "0.0.0",
   "private": true,
-  "web-types": "./web-types.json"
+  "web-types": "./web-types.json",
+  "dependencies": {
+    "htmx.org": "v4.0.0-alpha8"
+  }
 }

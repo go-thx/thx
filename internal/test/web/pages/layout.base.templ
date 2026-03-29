@@ -1,13 +1,15 @@
 package pages
 
+import "thx.test/gen/routes"
+
 templ baseLayout(content templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<title>THX</title>
-            <script src="https://cdn.jsdelivr.net/npm/htmx.org@v4.0.0-alpha8/dist/htmx.min.js" crossorigin="anonymous"></script>
-            <script src="https://cdn.jsdelivr.net/npm/htmx.org@v4.0.0-alpha8/dist/ext/hx-sse.js" crossorigin="anonymous"></script>
-            <script src="https://cdn.jsdelivr.net/npm/htmx.org@v4.0.0-alpha8/dist/ext/hx-ws.js" crossorigin="anonymous"></script>
+            <script src={ routes.Assets().HtmxMinJs() }></script>
+            <script src={ routes.Assets().HxWsMinJs() }></script>
+            <script src={ routes.Assets().HxSseMinJs() }></script>
 		</head>
 		<body hx-ext="preload">
 			@content

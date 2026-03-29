@@ -12,19 +12,37 @@ tasks:
     cmds:
       - >
         task --parallel --output=prefixed
-        go-run
+        test-run
+        test-thx-watch
         templ-watch
 
-  go-run:
+  test-run:
     cmds:
       - cd internal/test && go tool air
 
-  thx-gen:
+  test-copy-assets:
+    desc: "Copy the assets to the build directory."
+    cmds:
+      - >
+        cd internal/test
+        && mkdir -p gen/assets
+        && cp node_modules/htmx.org/dist/htmx.min.js gen/assets/htmx.min.js
+        && cp node_modules/htmx.org/dist/ext/hx-ws.min.js gen/assets/hx-ws.min.js
+        && cp node_modules/htmx.org/dist/ext/hx-sse.min.js gen/assets/hx-sse.min.js
+
+  test-thx-build:
     desc: "Generate the thx code for the project."
     cmds:
       - >
         cd internal/test
         && go tool thx generate routes -o gen/routes ./web/...
+
+  test-thx-watch:
+    hidden: true
+    silent: true
+    prefix: "thx"
+    cmds:
+      - task --watch test-thx-build
 
   templ-build:
     hidden: true

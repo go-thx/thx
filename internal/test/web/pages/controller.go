@@ -7,6 +7,7 @@ import (
 	"github.com/a-h/templ"
 	"github.com/go-thx/thx"
 	thxauth "github.com/go-thx/thx/auth"
+	"thx.test/gen/assets"
 	"thx.test/gen/routes"
 	"thx.test/web/pages/private"
 	"thx.test/web/pages/public"
@@ -31,6 +32,8 @@ func (c *Controller) Routes() thx.Routes {
 	return thx.WithMiddleware(
 		thx.Chain(c.logger),
 		thx.WithLayout(baseLayout,
+			thx.Static("/assets", assets.Assets()),
+
 			thx.Get("/", c.getIndex),
 
 			thx.WithPath("/public", c.public.Routes()),
