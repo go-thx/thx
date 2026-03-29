@@ -2,6 +2,10 @@ package codegen
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"sort"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -16,7 +20,10 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 			packages.NeedTypesInfo |
 			packages.NeedImports |
 			packages.NeedDeps,
-		Dir: dir,
+		Dir:       dir,
+		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+			return parser.ParseFile(fset, filename, src, parser.ParseComments)
+		},
 	}
 
 	pkgs, err := packages.Load(cfg, pattern)
@@ -24,24 +31,35 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 		return nil, fmt.Errorf("failed to load packages: %w", err)
 	}
 
-	var errs []error
+	// Don't fail on type-check errors — generated code may reference
+	// symbols that don't exist yet (e.g. routes.Assets on first run).
+	// The AST and partial type info are still usable for extraction.
+
+	// Start with packages that import thx (these contain routes).
+	// Also collect their direct imports so that references to
+	// non-thx packages (e.g. asset packages) can be resolved.
+	all := make(map[string]*packages.Package)
 	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e)
+		if !importsThx(pkg) {
+			continue
+		}
+		all[pkg.PkgPath] = pkg
+		for _, imp := range pkg.Imports {
+			if _, ok := all[imp.PkgPath]; !ok {
+				all[imp.PkgPath] = imp
+			}
 		}
 	}
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("package errors: %v", errs)
-	}
 
-	var filtered []*packages.Package
-	for _, pkg := range pkgs {
-		if importsThx(pkg) {
-			filtered = append(filtered, pkg)
-		}
+	result := make([]*packages.Package, 0, len(all))
+	for _, p := range all {
+		result = append(result, p)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].PkgPath < result[j].PkgPath
+	})
 
-	return filtered, nil
+	return result, nil
 }
 
 func importsThx(pkg *packages.Package) bool {

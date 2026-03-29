@@ -25,6 +25,10 @@ func Generate(tree *RouteTree, pkgName string) ([]byte, error) {
 		writeGroup(&buf, "", g)
 	}
 
+	for _, ag := range tree.Assets {
+		writeAssetGroup(&buf, ag)
+	}
+
 	return format.Source(buf.Bytes())
 }
 
@@ -213,4 +217,19 @@ func buildPathExpr(receiver, routePath string, params []PathParam) string {
 
 func hasGroups(tree *RouteTree) bool {
 	return len(tree.Groups) > 0
+}
+
+func writeAssetGroup(buf *bytes.Buffer, ag AssetGroup) {
+	typeName := strings.ToLower(ag.Name[:1]) + ag.Name[1:]
+
+	fmt.Fprintf(buf, "func %s() %s {\n", ag.Name, typeName)
+	fmt.Fprintf(buf, "\treturn %s{}\n", typeName)
+	buf.WriteString("}\n\n")
+
+	fmt.Fprintf(buf, "type %s struct{}\n\n", typeName)
+
+	for _, e := range ag.Entries {
+		fmt.Fprintf(buf, "func (_ %s) %s() string { return %q }\n", typeName, e.FuncName, e.FilePath+"?v="+e.Hash)
+	}
+	buf.WriteString("\n")
 }

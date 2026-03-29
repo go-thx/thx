@@ -3,3 +3,4 @@
 
 .ide
 internal/test/.airtmp
+node_modules

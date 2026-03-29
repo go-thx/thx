@@ -1,8 +1,12 @@
 package codegen
 
 import (
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/types"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 
@@ -14,6 +18,7 @@ const authPkgPath = thxPkgPath + "/auth"
 type extractor struct {
 	pkgs    []*packages.Package
 	methods map[string]*methodInfo // "pkg.Type.Method" -> info
+	errors  []error
 }
 
 type methodInfo struct {
@@ -37,6 +42,19 @@ func Extract(pkgs []*packages.Package) (*RouteTree, error) {
 	tree := &RouteTree{}
 	for _, root := range roots {
 		e.extractFromFunc(root.pkg, root.decl, tree)
+	}
+
+	if len(e.errors) > 0 {
+		return nil, errors.Join(e.errors...)
+	}
+
+	// Scan asset directories and populate entries.
+	for i := range tree.Assets {
+		entries, err := ScanAssets(tree.Assets[i].Dir, tree.Assets[i].Prefix)
+		if err != nil {
+			return nil, err
+		}
+		tree.Assets[i].Entries = entries
 	}
 
 	return tree, nil
@@ -206,6 +224,11 @@ func (e *extractor) extractCall(pkg *packages.Package, call *ast.CallExpr, tree 
 
 	case fnPkg == thxPkgPath && (fnName == "WithLayout" || fnName == "WithMiddleware"):
 		e.extractTransparent(pkg, call, tree)
+
+	case fnPkg == thxPkgPath && fnName == "Static":
+		if err := e.extractStatic(pkg, call, tree); err != nil {
+			e.errors = append(e.errors, err)
+		}
 
 	case fnPkg == thxPkgPath && (fnName == "HandleNotFound" || fnName == "HandleInternalError"):
 		// skip
@@ -489,6 +512,157 @@ func extractStructInfo(typ types.Type) *StructInfo {
 	}
 
 	return info
+}
+
+func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) error {
+	if len(call.Args) < 2 {
+		return nil
+	}
+
+	prefix := stringLitValue(call.Args[0])
+	if prefix == "" {
+		return nil
+	}
+
+	var name string
+	var targetPkg *packages.Package
+	var targetObj types.Object // the specific embed.FS variable to match
+
+	switch arg := call.Args[1].(type) {
+	case *ast.Ident:
+		// thx.Static("/assets", assetsFS)
+		name = arg.Name
+		obj := pkg.TypesInfo.ObjectOf(arg)
+		if obj == nil {
+			return nil
+		}
+		targetObj = obj
+		targetPkg = e.findPkg(obj.Pkg().Path())
+
+	case *ast.CallExpr:
+		// thx.Static("/assets", assets.Assets())
+		fnName, fnPkgPath := e.resolveFuncName(pkg, arg.Fun)
+		if fnName == "" {
+			return nil
+		}
+		name = fnName
+		targetPkg = e.findPkg(fnPkgPath)
+
+	default:
+		return nil
+	}
+
+	if targetPkg == nil {
+		return nil
+	}
+
+	// Find the //go:embed directive on the FS variable declaration.
+	for _, file := range targetPkg.Syntax {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+
+				// Match the specific variable if known (ident case),
+				// otherwise match any embed.FS in the package (call case).
+				matched := false
+				for _, n := range vs.Names {
+					obj := targetPkg.TypesInfo.ObjectOf(n)
+					if obj == nil {
+						continue
+					}
+					if targetObj != nil {
+						matched = obj == targetObj
+					} else {
+						matched = obj.Type().String() == "embed.FS"
+					}
+					if matched {
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+
+				embedDir := findEmbedDir(vs.Doc)
+				if embedDir == "" {
+					embedDir = findEmbedDir(gd.Doc)
+				}
+				if embedDir == "" {
+					continue
+				}
+
+				pkgDir := filepath.Dir(targetPkg.Fset.Position(file.Pos()).Filename)
+				if pkgDir == "" {
+					return fmt.Errorf("thx.Static: could not resolve package directory for %s", targetPkg.PkgPath)
+				}
+
+				absDir := filepath.Join(pkgDir, embedDir)
+				if _, err := os.Stat(absDir); err != nil {
+					return fmt.Errorf("thx.Static: embed directory %q does not exist (from //go:embed in %s)", absDir, targetPkg.PkgPath)
+				}
+
+				tree.Assets = append(tree.Assets, AssetGroup{
+					Name:   titleCase(name),
+					Prefix: prefix,
+					Dir:    absDir,
+				})
+				return nil
+			}
+		}
+	}
+
+	return nil
+}
+
+func (e *extractor) findPkg(pkgPath string) *packages.Package {
+	for _, p := range e.pkgs {
+		if p.PkgPath == pkgPath {
+			return p
+		}
+	}
+	return nil
+}
+
+func findEmbedDir(cg *ast.CommentGroup) string {
+	if cg == nil {
+		return ""
+	}
+	for _, c := range cg.List {
+		if !strings.HasPrefix(c.Text, "//go:embed ") {
+			continue
+		}
+		raw := strings.TrimPrefix(c.Text, "//go:embed ")
+
+		// Parse space-separated patterns and derive the directory.
+		// "public/*"    → "public"
+		// "assets/*.js" → "assets"
+		// "assets"      → "assets" (directory by name)
+		// "*"           → "."
+		// "all:assets"  → "assets"
+		for _, pattern := range strings.Fields(raw) {
+			pattern = strings.TrimPrefix(pattern, "all:")
+
+			// No wildcards and no path separator → directory by name.
+			if !strings.ContainsAny(pattern, "*?/") {
+				return pattern
+			}
+
+			dir := filepath.Dir(pattern)
+			if dir == "." {
+				return "."
+			}
+			return dir
+		}
+	}
+	return ""
 }
 
 func (e *extractor) resolveFuncName(pkg *packages.Package, fun ast.Expr) (name, pkgPath string) {
