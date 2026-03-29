@@ -1,6 +1,8 @@
 package codegen
 
 import (
+	"errors"
+	"fmt"
 	"go/ast"
 	"go/types"
 	"os"
@@ -16,6 +18,7 @@ const authPkgPath = thxPkgPath + "/auth"
 type extractor struct {
 	pkgs    []*packages.Package
 	methods map[string]*methodInfo // "pkg.Type.Method" -> info
+	errors  []error
 }
 
 type methodInfo struct {
@@ -39,6 +42,10 @@ func Extract(pkgs []*packages.Package) (*RouteTree, error) {
 	tree := &RouteTree{}
 	for _, root := range roots {
 		e.extractFromFunc(root.pkg, root.decl, tree)
+	}
+
+	if len(e.errors) > 0 {
+		return nil, errors.Join(e.errors...)
 	}
 
 	// Scan asset directories and populate entries.
@@ -219,7 +226,9 @@ func (e *extractor) extractCall(pkg *packages.Package, call *ast.CallExpr, tree 
 		e.extractTransparent(pkg, call, tree)
 
 	case fnPkg == thxPkgPath && fnName == "Static":
-		e.extractStatic(pkg, call, tree)
+		if err := e.extractStatic(pkg, call, tree); err != nil {
+			e.errors = append(e.errors, err)
+		}
 
 	case fnPkg == thxPkgPath && (fnName == "HandleNotFound" || fnName == "HandleInternalError"):
 		// skip
@@ -505,18 +514,19 @@ func extractStructInfo(typ types.Type) *StructInfo {
 	return info
 }
 
-func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
+func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) error {
 	if len(call.Args) < 2 {
-		return
+		return nil
 	}
 
 	prefix := stringLitValue(call.Args[0])
 	if prefix == "" {
-		return
+		return nil
 	}
 
 	var name string
 	var targetPkg *packages.Package
+	var targetObj types.Object // the specific embed.FS variable to match
 
 	switch arg := call.Args[1].(type) {
 	case *ast.Ident:
@@ -524,25 +534,26 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 		name = arg.Name
 		obj := pkg.TypesInfo.ObjectOf(arg)
 		if obj == nil {
-			return
+			return nil
 		}
+		targetObj = obj
 		targetPkg = e.findPkg(obj.Pkg().Path())
 
 	case *ast.CallExpr:
 		// thx.Static("/assets", assets.Assets())
 		fnName, fnPkgPath := e.resolveFuncName(pkg, arg.Fun)
 		if fnName == "" {
-			return
+			return nil
 		}
 		name = fnName
 		targetPkg = e.findPkg(fnPkgPath)
 
 	default:
-		return
+		return nil
 	}
 
 	if targetPkg == nil {
-		return
+		return nil
 	}
 
 	// Find the //go:embed directive on the FS variable declaration.
@@ -559,18 +570,27 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 					continue
 				}
 
-				hasEmbedFS := false
+				// Match the specific variable if known (ident case),
+				// otherwise match any embed.FS in the package (call case).
+				matched := false
 				for _, n := range vs.Names {
 					obj := targetPkg.TypesInfo.ObjectOf(n)
-					if obj != nil && obj.Type().String() == "embed.FS" {
-						hasEmbedFS = true
+					if obj == nil {
+						continue
+					}
+					if targetObj != nil {
+						matched = obj == targetObj
+					} else {
+						matched = obj.Type().String() == "embed.FS"
+					}
+					if matched {
+						break
 					}
 				}
-				if !hasEmbedFS {
+				if !matched {
 					continue
 				}
 
-				// Check ValueSpec doc first, then GenDecl doc.
 				embedDir := findEmbedDir(vs.Doc)
 				if embedDir == "" {
 					embedDir = findEmbedDir(gd.Doc)
@@ -581,12 +601,12 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 
 				pkgDir := filepath.Dir(targetPkg.Fset.Position(file.Pos()).Filename)
 				if pkgDir == "" {
-					continue
+					return fmt.Errorf("thx.Static: could not resolve package directory for %s", targetPkg.PkgPath)
 				}
 
 				absDir := filepath.Join(pkgDir, embedDir)
 				if _, err := os.Stat(absDir); err != nil {
-					continue
+					return fmt.Errorf("thx.Static: embed directory %q does not exist (from //go:embed in %s)", absDir, targetPkg.PkgPath)
 				}
 
 				tree.Assets = append(tree.Assets, AssetGroup{
@@ -594,10 +614,12 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 					Prefix: prefix,
 					Dir:    absDir,
 				})
-				return
+				return nil
 			}
 		}
 	}
+
+	return nil
 }
 
 func (e *extractor) findPkg(pkgPath string) *packages.Package {
