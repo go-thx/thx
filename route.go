@@ -171,6 +171,16 @@ func (r *route[Q, I]) Apply(router *Router) {
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
+		defer func() {
+			if req.MultipartForm != nil {
+				if err := req.MultipartForm.RemoveAll(); err != nil {
+					slog.ErrorContext(req.Context(), "Failed to remove multipart temp files.",
+						"path", path,
+						"error", err,
+					)
+				}
+			}
+		}()
 
 		queryData, ok := decodeQuery[Q](req, res, router)
 		if !ok {
