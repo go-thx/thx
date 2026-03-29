@@ -3,12 +3,13 @@ package thx
 import (
 	"encoding/base64"
 	"encoding/json"
+	"unicode/utf8"
 )
 
 const (
-	flashCookieName = "__thx_flash"
-	flashMaxMessages = 10
-	flashMaxMessageLen = 500
+	flashCookieName    = "__thx_flash"
+	flashMaxMessages   = 5
+	flashMaxMessageLen = 200
 )
 
 type flashPendingKey struct{}
@@ -22,11 +23,12 @@ type FlashMessage struct {
 
 // Flash stores a flash message that will be available on the next request.
 // Typically called before a redirect. Common levels: "success", "error",
-// "info", "warning". Messages are truncated to 500 characters and at most
-// 10 messages are stored per redirect. Stored in an HttpOnly cookie.
+// "info", "warning". Messages are truncated to 200 runes and at most
+// 5 messages are stored per redirect. Stored in an HttpOnly cookie.
 func Flash(ctx Context, level, message string) {
-	if len(message) > flashMaxMessageLen {
-		message = message[:flashMaxMessageLen]
+	if utf8.RuneCountInString(message) > flashMaxMessageLen {
+		runes := []rune(message)
+		message = string(runes[:flashMaxMessageLen])
 	}
 
 	pending := getPending(ctx)
@@ -49,6 +51,7 @@ func Flashes(ctx Context) []FlashMessage {
 
 	flashes := readFlashCookie(ctx)
 	ctx.SetValue(flashConsumedKey{}, true)
+	ctx.SetValue(flashPendingKey{}, []FlashMessage(nil))
 
 	if len(flashes) == 0 {
 		return nil
@@ -80,6 +83,18 @@ func readFlashCookie(ctx Context) []FlashMessage {
 		clearFlashCookie(ctx)
 		return nil
 	}
+
+	// Clamp to limits in case the cookie was tampered with.
+	if len(flashes) > flashMaxMessages {
+		flashes = flashes[:flashMaxMessages]
+	}
+	for i := range flashes {
+		if utf8.RuneCountInString(flashes[i].Message) > flashMaxMessageLen {
+			runes := []rune(flashes[i].Message)
+			flashes[i].Message = string(runes[:flashMaxMessageLen])
+		}
+	}
+
 	return flashes
 }
 
