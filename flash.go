@@ -50,12 +50,12 @@ func Flashes(ctx Context) []FlashMessage {
 	flashes := readFlashCookie(ctx)
 	ctx.SetValue(flashConsumedKey{}, true)
 	ctx.SetValue(flashPendingKey{}, []FlashMessage(nil))
+	clearFlashCookie(ctx)
 
 	if len(flashes) == 0 {
 		return nil
 	}
 
-	clearFlashCookie(ctx)
 	return flashes
 }
 
