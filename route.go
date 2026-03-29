@@ -50,7 +50,16 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 	}
 }
 
-var schemaDecoder = schema.NewDecoder()
+var (
+	queryDecoder = newQueryDecoder()
+	formDecoder  = schema.NewDecoder()
+)
+
+func newQueryDecoder() *schema.Decoder {
+	d := schema.NewDecoder()
+	d.IgnoreUnknownKeys(true)
+	return d
+}
 
 func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
 	res.WriteHeader(http.StatusBadRequest)
@@ -80,7 +89,7 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 		}
 	}
 
-	if err := schemaDecoder.Decode(&queryData, query); err != nil {
+	if err := queryDecoder.Decode(&queryData, query); err != nil {
 		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
@@ -139,7 +148,7 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 		}
 	}
 
-	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
+	if err := formDecoder.Decode(&in, req.PostForm); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
