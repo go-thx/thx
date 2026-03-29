@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -43,6 +44,8 @@ type Context interface {
 	Cookie(name string) string
 	SetCookie(name, value string, maxAge time.Duration, secure bool)
 	DelCookie(name string) Context
+
+	FormFile(name string) (multipart.File, *multipart.FileHeader, error)
 
 	SetStatus(status int)
 	Redirect(url string) Result
@@ -100,6 +103,10 @@ func (c *contextImpl) Cookie(name string) string {
 	}
 
 	return cookie.Value
+}
+
+func (c *contextImpl) FormFile(name string) (multipart.File, *multipart.FileHeader, error) {
+	return c.req.FormFile(name)
 }
 
 func (c *contextImpl) SetCookie(name, value string, maxAge time.Duration, secure bool) {

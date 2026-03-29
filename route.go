@@ -127,9 +127,16 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 		return in, true
 	}
 
-	if err := req.ParseForm(); err != nil {
-		handleBadRequest(err, req, res, router)
-		return in, false
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := req.ParseMultipartForm(32 << 20); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
+	} else {
+		if err := req.ParseForm(); err != nil {
+			handleBadRequest(err, req, res, router)
+			return in, false
+		}
 	}
 
 	if err := schemaDecoder.Decode(&in, req.PostForm); err != nil {
@@ -164,6 +171,16 @@ func (r *route[Q, I]) Apply(router *Router) {
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
+		defer func() {
+			if req.MultipartForm != nil {
+				if err := req.MultipartForm.RemoveAll(); err != nil {
+					slog.ErrorContext(req.Context(), "Failed to remove multipart temp files.",
+						"path", path,
+						"error", err,
+					)
+				}
+			}
+		}()
 
 		queryData, ok := decodeQuery[Q](req, res, router)
 		if !ok {
