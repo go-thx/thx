@@ -32,14 +32,38 @@ func (s *staticRoute) Apply(router *Router) {
 	router.Mux.Handle("GET "+pattern, http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(pattern, router, res, req)
 
-		if req.URL.Query().Has("v") {
-			res.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
-			res.Header().Set("Cache-Control", "no-cache")
-		}
+		versioned := req.URL.Query().Has("v")
+		w := &staticResponseWriter{ResponseWriter: res, versioned: versioned}
 
-		http.StripPrefix(prefix, handler).ServeHTTP(res, req)
+		http.StripPrefix(prefix, handler).ServeHTTP(w, req)
 	}))
+}
+
+type staticResponseWriter struct {
+	http.ResponseWriter
+	versioned   bool
+	wroteHeader bool
+}
+
+func (w *staticResponseWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+		if code == http.StatusOK || code == http.StatusPartialContent {
+			if w.versioned {
+				w.ResponseWriter.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.ResponseWriter.Header().Set("Cache-Control", "no-cache")
+			}
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *staticResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 type noDirFS struct {
