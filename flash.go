@@ -10,6 +10,7 @@ const (
 	flashCookieName    = "__thx_flash"
 	flashMaxMessages   = 5
 	flashMaxMessageLen = 200
+	flashMaxCookieLen  = 3072
 )
 
 type flashPendingKey struct{}
@@ -26,10 +27,7 @@ type FlashMessage struct {
 // "info", "warning". Messages are truncated to 200 runes and at most
 // 5 messages are stored per redirect. Stored in an HttpOnly cookie.
 func Flash(ctx Context, level, message string) {
-	if utf8.RuneCountInString(message) > flashMaxMessageLen {
-		runes := []rune(message)
-		message = string(runes[:flashMaxMessageLen])
-	}
+	message = truncateRunes(message, flashMaxMessageLen)
 
 	pending := getPending(ctx)
 	if len(pending) >= flashMaxMessages {
@@ -73,6 +71,10 @@ func readFlashCookie(ctx Context) []FlashMessage {
 	if raw == "" {
 		return nil
 	}
+	if len(raw) > flashMaxCookieLen {
+		clearFlashCookie(ctx)
+		return nil
+	}
 	data, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
 		clearFlashCookie(ctx)
@@ -84,15 +86,11 @@ func readFlashCookie(ctx Context) []FlashMessage {
 		return nil
 	}
 
-	// Clamp to limits in case the cookie was tampered with.
 	if len(flashes) > flashMaxMessages {
 		flashes = flashes[:flashMaxMessages]
 	}
 	for i := range flashes {
-		if utf8.RuneCountInString(flashes[i].Message) > flashMaxMessageLen {
-			runes := []rune(flashes[i].Message)
-			flashes[i].Message = string(runes[:flashMaxMessageLen])
-		}
+		flashes[i].Message = truncateRunes(flashes[i].Message, flashMaxMessageLen)
 	}
 
 	return flashes
@@ -104,11 +102,21 @@ func writeFlashCookie(ctx Context, flashes []FlashMessage) {
 		return
 	}
 	encoded := base64.RawURLEncoding.EncodeToString(data)
-	ctx.SetCookie(flashCookieName, encoded, 0, false)
+	if len(encoded) > flashMaxCookieLen {
+		return
+	}
+	ctx.SetCookie(flashCookieName, encoded, 0, ctx.Header("X-Forwarded-Proto") == "https")
 }
 
 func clearFlashCookie(ctx Context) {
 	ctx.DelCookie(flashCookieName)
+}
+
+func truncateRunes(s string, max int) string {
+	if utf8.RuneCountInString(s) <= max {
+		return s
+	}
+	return string([]rune(s)[:max])
 }
 
 // FlashSuccess is a shorthand for Flash(ctx, "success", message).
