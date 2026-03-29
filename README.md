@@ -358,6 +358,34 @@ func (c *Controller) postComment(ctx thx.Context, _ struct{}, form commentForm) 
 
 The primary component renders normally with layouts. OOB swaps are appended for HTMX requests only.
 
+## Intentionally not included
+
+### CSRF protection
+
+thx does not include CSRF token middleware. For a typical thx application, browser-level protections are sufficient:
+
+- **`SameSite=Lax` cookies** — thx sets this on all cookies by default. The browser will not send auth cookies on cross-origin POST/PUT/DELETE form submissions, which prevents classic CSRF attacks.
+- **HTMX custom headers** — HTMX adds `HX-Request: true` on every request. Custom headers trigger CORS preflight, so cross-origin HTMX requests are blocked unless the server explicitly allows them.
+
+Together, these cover the standard CSRF attack surface without tokens. If your application has unusual requirements (complex subdomain trust models, very old browser support), use a dedicated CSRF middleware like `gorilla/csrf` or `justinas/nosurf` via `thx.WithMiddleware`.
+
+### Request ID
+
+Request ID generation (for logging/tracing correlation) is a standard HTTP middleware — it generates a UUID, stores it in context, and sets a response header. There is no framework integration needed. Use any existing middleware or write your own:
+
+```go
+func RequestID(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        id := uuid.NewString()
+        ctx := context.WithValue(r.Context(), requestIDKey{}, id)
+        w.Header().Set("X-Request-ID", id)
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+
+Wire it in with `thx.WithMiddleware(RequestID, ...)`.
+
 ## References and inspiration
 
 ### [go-htmx](https://github.com/donseba/go-htmx)
