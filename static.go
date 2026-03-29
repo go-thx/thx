@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -22,7 +23,8 @@ type staticRoute struct {
 func (s *staticRoute) Apply(router *Router) {
 	handler := http.FileServerFS(noDirectoryListing(s.fsys))
 
-	pattern := s.prefix
+	prefix := filepath.Join(router.Path, s.prefix)
+	pattern := prefix
 	if !strings.HasSuffix(pattern, "/") {
 		pattern += "/"
 	}
@@ -36,7 +38,7 @@ func (s *staticRoute) Apply(router *Router) {
 			res.Header().Set("Cache-Control", "no-cache")
 		}
 
-		http.StripPrefix(s.prefix, handler).ServeHTTP(res, req)
+		http.StripPrefix(prefix, handler).ServeHTTP(res, req)
 	}))
 }
 

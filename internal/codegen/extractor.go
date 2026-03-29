@@ -620,10 +620,18 @@ func findEmbedDir(cg *ast.CommentGroup) string {
 		raw := strings.TrimPrefix(c.Text, "//go:embed ")
 
 		// Parse space-separated patterns and derive the directory.
-		// "public/*" → "public", "assets/*.js" → "assets", "*" → ".", "all:assets" → "assets"
+		// "public/*"    → "public"
+		// "assets/*.js" → "assets"
+		// "assets"      → "assets" (directory by name)
+		// "*"           → "."
+		// "all:assets"  → "assets"
 		for _, pattern := range strings.Fields(raw) {
-			// Strip the "all:" prefix if present.
 			pattern = strings.TrimPrefix(pattern, "all:")
+
+			// No wildcards and no path separator → directory by name.
+			if !strings.ContainsAny(pattern, "*?/") {
+				return pattern
+			}
 
 			dir := filepath.Dir(pattern)
 			if dir == "." {
