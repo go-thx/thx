@@ -3,6 +3,7 @@ package thx
 import (
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ type staticRoute struct {
 }
 
 func (s *staticRoute) Apply(router *Router) {
-	handler := http.FileServerFS(s.fsys)
+	handler := http.FileServerFS(noDirectoryListing(s.fsys))
 
 	pattern := s.prefix
 	if !strings.HasSuffix(pattern, "/") {
@@ -37,4 +38,37 @@ func (s *staticRoute) Apply(router *Router) {
 
 		http.StripPrefix(s.prefix, handler).ServeHTTP(res, req)
 	}))
+}
+
+type noDirFS struct {
+	fs.FS
+}
+
+func noDirectoryListing(fsys fs.FS) fs.FS {
+	return noDirFS{fsys}
+}
+
+func (n noDirFS) Open(name string) (fs.File, error) {
+	f, err := n.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+
+	if info.IsDir() {
+		// Check for index.html; if absent, return not found.
+		index, err := n.FS.Open(path.Join(name, "index.html"))
+		if err != nil {
+			f.Close()
+			return nil, fs.ErrNotExist
+		}
+		index.Close()
+	}
+
+	return f, nil
 }

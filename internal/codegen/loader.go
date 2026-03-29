@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"sort"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -60,6 +61,9 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 	for _, p := range all {
 		result = append(result, p)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].PkgPath < result[j].PkgPath
+	})
 
 	return result, nil
 }

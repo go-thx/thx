@@ -545,7 +545,7 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 		return
 	}
 
-	// Find the //go:embed directive adjacent to the FS variable declaration.
+	// Find the //go:embed directive on the FS variable declaration.
 	for _, file := range targetPkg.Syntax {
 		for _, decl := range file.Decls {
 			gd, ok := decl.(*ast.GenDecl)
@@ -553,30 +553,28 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 				continue
 			}
 
-			// Check if this GenDecl contains an embed.FS variable.
-			hasEmbedFS := false
 			for _, spec := range gd.Specs {
 				vs, ok := spec.(*ast.ValueSpec)
 				if !ok {
 					continue
 				}
+
+				hasEmbedFS := false
 				for _, n := range vs.Names {
 					obj := targetPkg.TypesInfo.ObjectOf(n)
 					if obj != nil && obj.Type().String() == "embed.FS" {
 						hasEmbedFS = true
 					}
 				}
-			}
-			if !hasEmbedFS {
-				continue
-			}
-
-			// Find the //go:embed comment attached to this declaration.
-			for _, cg := range file.Comments {
-				if cg.Pos() >= gd.Pos() {
+				if !hasEmbedFS {
 					continue
 				}
-				embedDir := findEmbedDir(cg)
+
+				// Check ValueSpec doc first, then GenDecl doc.
+				embedDir := findEmbedDir(vs.Doc)
+				if embedDir == "" {
+					embedDir = findEmbedDir(gd.Doc)
+				}
 				if embedDir == "" {
 					continue
 				}
@@ -619,17 +617,20 @@ func findEmbedDir(cg *ast.CommentGroup) string {
 		if !strings.HasPrefix(c.Text, "//go:embed ") {
 			continue
 		}
-		pattern := strings.TrimPrefix(c.Text, "//go:embed ")
-		pattern = strings.TrimSpace(pattern)
+		raw := strings.TrimPrefix(c.Text, "//go:embed ")
 
-		// Extract the directory from the embed pattern.
-		// "public/*" → "public", "assets/**" → "assets", "*" → "."
-		dir := strings.TrimRight(pattern, "*")
-		dir = strings.TrimRight(dir, "/")
-		if dir == "" {
-			return "."
+		// Parse space-separated patterns and derive the directory.
+		// "public/*" → "public", "assets/*.js" → "assets", "*" → ".", "all:assets" → "assets"
+		for _, pattern := range strings.Fields(raw) {
+			// Strip the "all:" prefix if present.
+			pattern = strings.TrimPrefix(pattern, "all:")
+
+			dir := filepath.Dir(pattern)
+			if dir == "." {
+				return "."
+			}
+			return dir
 		}
-		return dir
 	}
 	return ""
 }
