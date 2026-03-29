@@ -31,15 +31,9 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 		return nil, fmt.Errorf("failed to load packages: %w", err)
 	}
 
-	var errs []error
-	for _, pkg := range pkgs {
-		for _, e := range pkg.Errors {
-			errs = append(errs, e)
-		}
-	}
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("package errors: %v", errs)
-	}
+	// Don't fail on type-check errors — generated code may reference
+	// symbols that don't exist yet (e.g. routes.Assets on first run).
+	// The AST and partial type info are still usable for extraction.
 
 	// Start with packages that import thx (these contain routes).
 	// Also collect their direct imports so that references to

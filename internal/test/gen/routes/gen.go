@@ -49,3 +49,13 @@ func (p private) Events() Route {
 func (p private) Ws() Route {
 	return Route{path: pathJoin(p.path, "/ws"), method: "WS"}
 }
+
+func Assets() assets {
+	return assets{}
+}
+
+type assets struct{}
+
+func (_ assets) HtmxMinJs() string  { return "/assets/htmx.min.js?v=b08c3b13d429" }
+func (_ assets) HxSseMinJs() string { return "/assets/hx-sse.min.js?v=c39427753fd3" }
+func (_ assets) HxWsMinJs() string  { return "/assets/hx-ws.min.js?v=95652adaef22" }
