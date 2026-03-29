@@ -40,21 +40,20 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 		return nil, fmt.Errorf("package errors: %v", errs)
 	}
 
-	// Collect all transitively imported packages so that
-	// references to non-thx packages (e.g. asset packages) can be resolved.
+	// Start with packages that import thx (these contain routes).
+	// Also collect their direct imports so that references to
+	// non-thx packages (e.g. asset packages) can be resolved.
 	all := make(map[string]*packages.Package)
-	var collect func(p *packages.Package)
-	collect = func(p *packages.Package) {
-		if _, ok := all[p.PkgPath]; ok {
-			return
+	for _, pkg := range pkgs {
+		if !importsThx(pkg) {
+			continue
 		}
-		all[p.PkgPath] = p
-		for _, imp := range p.Imports {
-			collect(imp)
+		all[pkg.PkgPath] = pkg
+		for _, imp := range pkg.Imports {
+			if _, ok := all[imp.PkgPath]; !ok {
+				all[imp.PkgPath] = imp
+			}
 		}
-	}
-	for _, p := range pkgs {
-		collect(p)
 	}
 
 	result := make([]*packages.Package, 0, len(all))

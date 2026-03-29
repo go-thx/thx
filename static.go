@@ -27,6 +27,8 @@ func (s *staticRoute) Apply(router *Router) {
 	}
 
 	router.Mux.Handle("GET "+pattern, http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		defer handlePanic(pattern, router, res, req)
+
 		if req.URL.Query().Has("v") {
 			res.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		} else {

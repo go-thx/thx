@@ -229,7 +229,7 @@ func writeAssetGroup(buf *bytes.Buffer, ag AssetGroup) {
 	fmt.Fprintf(buf, "type %s struct{}\n\n", typeName)
 
 	for _, e := range ag.Entries {
-		fmt.Fprintf(buf, "func (%s) %s() string { return %q }\n", typeName, e.FuncName, e.FilePath+"?v="+e.Hash)
+		fmt.Fprintf(buf, "func (_ %s) %s() string { return %q }\n", typeName, e.FuncName, e.FilePath+"?v="+e.Hash)
 	}
 	buf.WriteString("\n")
 }

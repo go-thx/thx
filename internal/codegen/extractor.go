@@ -545,10 +545,42 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 		return
 	}
 
-	// Find the //go:embed directive in the target package and resolve the directory.
+	// Find the //go:embed directive adjacent to the FS variable declaration.
 	for _, file := range targetPkg.Syntax {
-		for _, cg := range file.Comments {
-			if embedDir := findEmbedDir(cg); embedDir != "" {
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+
+			// Check if this GenDecl contains an embed.FS variable.
+			hasEmbedFS := false
+			for _, spec := range gd.Specs {
+				vs, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, n := range vs.Names {
+					obj := targetPkg.TypesInfo.ObjectOf(n)
+					if obj != nil && obj.Type().String() == "embed.FS" {
+						hasEmbedFS = true
+					}
+				}
+			}
+			if !hasEmbedFS {
+				continue
+			}
+
+			// Find the //go:embed comment attached to this declaration.
+			for _, cg := range file.Comments {
+				if cg.Pos() >= gd.Pos() {
+					continue
+				}
+				embedDir := findEmbedDir(cg)
+				if embedDir == "" {
+					continue
+				}
+
 				pkgDir := filepath.Dir(targetPkg.Fset.Position(file.Pos()).Filename)
 				if pkgDir == "" {
 					continue
@@ -584,13 +616,20 @@ func findEmbedDir(cg *ast.CommentGroup) string {
 		return ""
 	}
 	for _, c := range cg.List {
-		if strings.HasPrefix(c.Text, "//go:embed ") {
-			pattern := strings.TrimPrefix(c.Text, "//go:embed ")
-			pattern = strings.TrimRight(pattern, "*/ ")
-			if pattern != "" {
-				return pattern
-			}
+		if !strings.HasPrefix(c.Text, "//go:embed ") {
+			continue
 		}
+		pattern := strings.TrimPrefix(c.Text, "//go:embed ")
+		pattern = strings.TrimSpace(pattern)
+
+		// Extract the directory from the embed pattern.
+		// "public/*" → "public", "assets/**" → "assets", "*" → "."
+		dir := strings.TrimRight(pattern, "*")
+		dir = strings.TrimRight(dir, "/")
+		if dir == "" {
+			return "."
+		}
+		return dir
 	}
 	return ""
 }
