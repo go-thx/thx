@@ -12,6 +12,8 @@ import (
 
 const thxPkgPath = "github.com/go-thx/thx"
 
+// LoadPackages loads Go packages matching the pattern from the given directory.
+// Returns packages that import thx along with their direct dependencies.
 func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName |
@@ -62,6 +64,7 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 	return result, nil
 }
 
+// importsThx returns true if the package imports thx or thx/auth.
 func importsThx(pkg *packages.Package) bool {
 	for path := range pkg.Imports {
 		if path == thxPkgPath || path == thxPkgPath+"/auth" {

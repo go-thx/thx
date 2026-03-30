@@ -44,6 +44,8 @@ type oobResult struct {
 	status  int
 }
 
+// WriteResult renders the primary component with layouts, then appends
+// out-of-band swap templates for HTMX requests.
 func (r *oobResult) WriteResult(res http.ResponseWriter) error {
 	comp := r.primary
 	if layouts, ok := r.ctx.Value(layoutsKey{}).([]Layout); ok {
@@ -70,6 +72,7 @@ func (r *oobResult) WriteResult(res http.ResponseWriter) error {
 	return nil
 }
 
+// renderOOBSwap renders a single OOB swap as an hx-swap-oob template element.
 func renderOOBSwap(ctx internal.Context, res http.ResponseWriter, swap OOBSwap) error {
 	var buf bytes.Buffer
 	if err := swap.comp.Render(ctx, &buf); err != nil {

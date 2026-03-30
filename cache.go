@@ -94,6 +94,7 @@ func CachedByKey[K comparable](ttl time.Duration, factory func(K) templ.Componen
 	}
 }
 
+// cacheEntry holds a cached component and its expiration time.
 type cacheEntry struct {
 	comp    templ.Component
 	expires time.Time

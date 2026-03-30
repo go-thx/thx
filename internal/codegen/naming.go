@@ -8,6 +8,7 @@ import (
 
 var pathParamRe = regexp.MustCompile(`\{(\w+)\}`)
 
+// extractPathParams finds all {param} placeholders in a route path.
 func extractPathParams(path string) []PathParam {
 	matches := pathParamRe.FindAllStringSubmatch(path, -1)
 	params := make([]PathParam, 0, len(matches))
@@ -17,6 +18,7 @@ func extractPathParams(path string) []PathParam {
 	return params
 }
 
+// groupNameFromPath derives a PascalCase group name from a URL prefix.
 func groupNameFromPath(prefix string) string {
 	prefix = strings.TrimPrefix(prefix, "/")
 	prefix = strings.TrimSuffix(prefix, "/")
@@ -35,6 +37,7 @@ func groupNameFromPath(prefix string) string {
 	return result
 }
 
+// routeMethodName generates a Go method name from the HTTP method and path.
 func routeMethodName(method, path string) string {
 	path = strings.TrimPrefix(path, "/")
 	path = strings.TrimSuffix(path, "/")
@@ -71,6 +74,7 @@ func routeMethodName(method, path string) string {
 	}
 }
 
+// titleCase uppercases the first rune of the string.
 func titleCase(s string) string {
 	if s == "" {
 		return s
