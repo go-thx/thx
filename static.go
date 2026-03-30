@@ -19,6 +19,7 @@ type staticRoute struct {
 	fsys   fs.FS
 }
 
+// Apply registers the static file handler on the router's mux.
 func (s *staticRoute) Apply(router *Router) {
 	handler := http.FileServerFS(noDirectoryListing(s.fsys))
 
@@ -38,12 +39,15 @@ func (s *staticRoute) Apply(router *Router) {
 	}))
 }
 
+// staticResponseWriter injects cache headers based on whether
+// the request has a version query parameter.
 type staticResponseWriter struct {
 	http.ResponseWriter
 	versioned   bool
 	wroteHeader bool
 }
 
+// WriteHeader sets cache headers on the first call, then delegates.
 func (w *staticResponseWriter) WriteHeader(code int) {
 	if !w.wroteHeader {
 		w.wroteHeader = true
@@ -58,6 +62,7 @@ func (w *staticResponseWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Write ensures headers are written before the first body write.
 func (w *staticResponseWriter) Write(b []byte) (int, error) {
 	if !w.wroteHeader {
 		w.WriteHeader(http.StatusOK)
@@ -69,10 +74,14 @@ type noDirFS struct {
 	fs.FS
 }
 
+// noDirectoryListing wraps an fs.FS to prevent directory listing.
+// Directories are only served if they contain an index.html file.
 func noDirectoryListing(fsys fs.FS) fs.FS {
 	return noDirFS{fsys}
 }
 
+// Open opens the named file, returning fs.ErrNotExist for directories
+// that lack an index.html file.
 func (n noDirFS) Open(name string) (fs.File, error) {
 	f, err := n.FS.Open(name)
 	if err != nil {

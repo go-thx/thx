@@ -9,14 +9,23 @@ import (
 	"github.com/go-thx/thx/internal"
 )
 
+// SSEHandler is a handler function for Server-Sent Events connections.
+// Q is the query parameter type.
 type SSEHandler[Q any] func(ctx Context, query Q, stream EventStream)
 
+// EventStream provides methods for sending Server-Sent Events to the client.
 type EventStream interface {
+	// Send writes a data-only SSE message.
 	Send(data string) error
+	// SendEvent writes an SSE message with a named event type.
 	SendEvent(event string, data string) error
+	// SendJSON marshals data as JSON and sends it as an SSE data field.
 	SendJSON(data any) error
 }
 
+// SSE registers a Server-Sent Events route at the given path.
+// The handler receives an EventStream for pushing events to the client.
+// The connection stays open until the handler returns or the client disconnects.
 func SSE[Q any](path string, handler SSEHandler[Q]) Route {
 	return &sseRoute[Q]{
 		path:    path,
@@ -29,6 +38,8 @@ type sseRoute[Q any] struct {
 	handler SSEHandler[Q]
 }
 
+// Apply registers the SSE route on the router's mux as a GET handler
+// that sets the appropriate SSE headers and streams events.
 func (r *sseRoute[Q]) Apply(router *Router) {
 	path := routePath(router.Path, r.path)
 
@@ -71,6 +82,7 @@ type eventStream struct {
 	flusher http.Flusher
 }
 
+// Send writes a data-only SSE message and flushes it to the client.
 func (s *eventStream) Send(data string) error {
 	if _, err := fmt.Fprintf(s.res, "data: %s\n\n", data); err != nil {
 		return err
@@ -79,6 +91,7 @@ func (s *eventStream) Send(data string) error {
 	return nil
 }
 
+// SendEvent writes an SSE message with a named event type and flushes it.
 func (s *eventStream) SendEvent(event string, data string) error {
 	if _, err := fmt.Fprintf(s.res, "event: %s\ndata: %s\n\n", event, data); err != nil {
 		return err
@@ -87,6 +100,7 @@ func (s *eventStream) SendEvent(event string, data string) error {
 	return nil
 }
 
+// SendJSON marshals data as JSON and sends it as an SSE data field.
 func (s *eventStream) SendJSON(data any) error {
 	b, err := json.Marshal(data)
 	if err != nil {

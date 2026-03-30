@@ -59,6 +59,8 @@ func Flashes(ctx Context) []FlashMessage {
 	return flashes
 }
 
+// getPending returns flash messages queued in the current request,
+// falling back to reading from the cookie if none are queued yet.
 func getPending(ctx Context) []FlashMessage {
 	if pending, ok := ctx.Value(flashPendingKey{}).([]FlashMessage); ok {
 		return pending
@@ -66,6 +68,8 @@ func getPending(ctx Context) []FlashMessage {
 	return readFlashCookie(ctx)
 }
 
+// readFlashCookie decodes flash messages from the cookie, applying
+// size and count limits. Returns nil if the cookie is absent or invalid.
 func readFlashCookie(ctx Context) []FlashMessage {
 	raw := ctx.Cookie(flashCookieName)
 	if raw == "" {
@@ -96,6 +100,8 @@ func readFlashCookie(ctx Context) []FlashMessage {
 	return flashes
 }
 
+// writeFlashCookie encodes flash messages into a base64 cookie.
+// Silently drops the write if the encoded payload exceeds the size limit.
 func writeFlashCookie(ctx Context, flashes []FlashMessage) {
 	data, err := json.Marshal(flashes)
 	if err != nil {
@@ -108,10 +114,12 @@ func writeFlashCookie(ctx Context, flashes []FlashMessage) {
 	ctx.SetCookie(flashCookieName, encoded, 0, false)
 }
 
+// clearFlashCookie deletes the flash cookie from the response.
 func clearFlashCookie(ctx Context) {
 	ctx.DelCookie(flashCookieName)
 }
 
+// truncateRunes truncates the string to at most max runes.
 func truncateRunes(s string, max int) string {
 	if utf8.RuneCountInString(s) <= max {
 		return s

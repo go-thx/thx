@@ -326,22 +326,73 @@ Each page button swaps the entire table/list container:
 
 Use thx's typed query params to decode the page number. The response includes the list and updated pagination controls.
 
-### Toast notifications (server-driven)
+### Flash messages and toast notifications
 
-Inject a toast from any handler without client-side event listeners — use HTMX response headers to append a toast component to the page body:
+There are three patterns depending on the context. Use the right one for each situation.
+
+#### HTMX requests: HX-Trigger (recommended)
+
+The simplest approach for HTMX form submissions. The server triggers a client-side event, and a small JS listener renders the toast. This works alongside a normal content swap — a single response can update the page AND show a notification.
 
 ```go
 func (c *Controller) postSomething(ctx thx.Context, _ struct{}, form myForm) thx.Result {
     // ... do work ...
-
-    hx := ctx.HTMX()
-    hx.Retarget("body")
-    hx.Reswap(thx.SwapBeforeEnd)
-    return thx.Render(ctx, toastSuccess("Saved successfully"))
+    ctx.HTMX().Trigger("showToast", map[string]any{"level": "success", "message": "Saved!"})
+    return thx.Render(ctx, updatedContent())
 }
 ```
 
-The toast templ component handles its own auto-dismiss (e.g. `setTimeout` to remove itself after 5 seconds). This pattern works from any handler and does not require a global trigger convention.
+```javascript
+// ~5 lines in your base layout
+document.body.addEventListener("showToast", (e) => {
+    const { level, message } = e.detail;
+    // render your toast UI however you like
+});
+```
+
+For error cases where you don't want to swap content, combine with `Reswap`:
+
+```go
+ctx.HTMX().Reswap(thx.SwapNone)
+ctx.HTMX().Trigger("showToast", map[string]any{"level": "error", "message": "Validation failed"})
+return thx.Empty()
+```
+
+#### HTMX requests: OOB swap (fully server-rendered)
+
+If you want toasts rendered entirely server-side (no client JS for toast construction), use OOB swaps. Your layout needs a `<div id="flashes"></div>` container, and the server appends toast HTML as an OOB fragment.
+
+```go
+func (c *Controller) postSomething(ctx thx.Context, _ struct{}, form myForm) thx.Result {
+    // ... do work ...
+    return thx.SwapOOB(ctx, updatedContent(),
+        thx.OOBWithStrategy("#flashes", thx.SwapAfterBegin, toastSuccess("Saved!")),
+    )
+}
+```
+
+Using `afterbegin` appends new toasts without clearing existing ones.
+
+#### Full-page redirects: cookie-based flash
+
+For redirects that leave the HTMX context (login, logout, initial navigation), use thx's cookie-based flash messages. These survive across the redirect and are consumed on the next page load.
+
+```go
+// POST handler — set flash before redirect
+func (c *Controller) postLogin(ctx thx.Context, _ struct{}, form loginForm) thx.Result {
+    // ... authenticate ...
+    thx.FlashSuccess(ctx, "Welcome back!")
+    return ctx.Redirect("/dashboard")
+}
+
+// GET handler — read and display flashes
+func (c *Controller) getDashboard(ctx thx.Context, _ struct{}) thx.Result {
+    flashes := thx.Flashes(ctx) // reads and clears cookie
+    return thx.Render(ctx, dashboardView(flashes))
+}
+```
+
+Note: `HX-Trigger` headers on 3xx responses are ignored by HTMX, so cookie-based flashes are the only option for redirects.
 
 ### Out-of-band updates
 
@@ -385,6 +436,16 @@ func RequestID(next http.Handler) http.Handler {
 ```
 
 Wire it in with `thx.WithMiddleware(RequestID, ...)`.
+
+### Integrated OOB flash mechanism
+
+thx does not auto-append flash messages as OOB fragments to responses. An integrated mechanism would accumulate flashes on the context, automatically render them as `<template hx-swap-oob="afterbegin:#flashes">` during `WriteResult`, and fall back to cookies for redirects. This was considered but not included because:
+
+- It requires a framework-managed DOM container (`#flashes`) and a registered toast renderer — coupling thx to specific HTML conventions.
+- The existing building blocks already cover every case: `ctx.HTMX().Trigger()` for HTMX requests (most common, ~5 lines of client JS), `thx.SwapOOB()` for fully server-rendered toasts, and `thx.Flash()` for redirects.
+- Toast presentation varies wildly between apps (libraries, animations, positioning, stacking). The framework shouldn't dictate this.
+
+See [Flash messages and toast notifications](#flash-messages-and-toast-notifications) in the recipes section for the recommended patterns.
 
 ## References and inspiration
 

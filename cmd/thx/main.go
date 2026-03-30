@@ -9,6 +9,8 @@ import (
 	"github.com/go-thx/thx/internal/codegen"
 )
 
+// main is the entry point for the thx code generation CLI.
+// Usage: thx generate routes [-o <output-dir>] [<package-pattern>]
 func main() {
 	if len(os.Args) < 3 || os.Args[1] != "generate" || os.Args[2] != "routes" {
 		fmt.Fprintln(os.Stderr, "usage: thx generate routes [-o <output-dir>] [<package-pattern>]")

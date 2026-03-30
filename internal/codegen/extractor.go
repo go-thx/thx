@@ -15,6 +15,7 @@ import (
 
 const authPkgPath = thxPkgPath + "/auth"
 
+// extractor traverses loaded Go packages to find and extract route definitions.
 type extractor struct {
 	pkgs    []*packages.Package
 	methods map[string]*methodInfo // "pkg.Type.Method" -> info
@@ -26,6 +27,8 @@ type methodInfo struct {
 	decl *ast.FuncDecl
 }
 
+// Extract analyzes the given packages and returns a RouteTree containing
+// all discovered routes, groups, and static asset definitions.
 func Extract(pkgs []*packages.Package) (*RouteTree, error) {
 	e := &extractor{
 		pkgs:    pkgs,
@@ -60,6 +63,7 @@ func Extract(pkgs []*packages.Package) (*RouteTree, error) {
 	return tree, nil
 }
 
+// indexMethods builds a lookup table of all methods across all packages.
 func (e *extractor) indexMethods() {
 	for _, pkg := range e.pkgs {
 		for _, file := range pkg.Syntax {
@@ -81,6 +85,7 @@ func (e *extractor) indexMethods() {
 	}
 }
 
+// findRoots finds top-level Routes() methods that are not called by other Routes() methods.
 func (e *extractor) findRoots() []*methodInfo {
 	calledBy := make(map[string]bool)
 
@@ -101,6 +106,7 @@ func (e *extractor) findRoots() []*methodInfo {
 	return roots
 }
 
+// findRoutesCalls marks all Routes() methods called within a function body.
 func (e *extractor) findRoutesCalls(pkg *packages.Package, decl *ast.FuncDecl, called map[string]bool) {
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -141,6 +147,7 @@ func (e *extractor) findRoutesCalls(pkg *packages.Package, decl *ast.FuncDecl, c
 	})
 }
 
+// returnsThxRoutes checks if a function declaration returns thx.Routes.
 func (e *extractor) returnsThxRoutes(pkg *packages.Package, decl *ast.FuncDecl) bool {
 	obj := pkg.TypesInfo.Defs[decl.Name]
 	if obj == nil {
@@ -167,6 +174,7 @@ func (e *extractor) returnsThxRoutes(pkg *packages.Package, decl *ast.FuncDecl) 
 	return named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == thxPkgPath && named.Obj().Name() == "Routes"
 }
 
+// extractFromFunc extracts route definitions from the return statements of a function.
 func (e *extractor) extractFromFunc(pkg *packages.Package, decl *ast.FuncDecl, tree *RouteTree) {
 	if decl.Body == nil {
 		return
@@ -183,6 +191,7 @@ func (e *extractor) extractFromFunc(pkg *packages.Package, decl *ast.FuncDecl, t
 	}
 }
 
+// extractExpr dispatches expression extraction by type (call or composite literal).
 func (e *extractor) extractExpr(pkg *packages.Package, expr ast.Expr, tree *RouteTree) {
 	switch x := expr.(type) {
 	case *ast.CallExpr:
@@ -194,6 +203,7 @@ func (e *extractor) extractExpr(pkg *packages.Package, expr ast.Expr, tree *Rout
 	}
 }
 
+// extractCall inspects a function call and extracts route info based on the called function.
 func (e *extractor) extractCall(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
 	fnName, fnPkg := e.resolveFuncName(pkg, call.Fun)
 
@@ -240,6 +250,7 @@ func (e *extractor) extractCall(pkg *packages.Package, call *ast.CallExpr, tree 
 	}
 }
 
+// extractRoute extracts a single route entry from a thx.Get/Post/etc. call.
 func (e *extractor) extractRoute(pkg *packages.Package, call *ast.CallExpr, method string) *RouteEntry {
 	if len(call.Args) < 2 {
 		return nil
@@ -284,6 +295,7 @@ func (e *extractor) extractRoute(pkg *packages.Package, call *ast.CallExpr, meth
 	return entry
 }
 
+// resolveHandlerName extracts the handler function or method name from the expression.
 func (e *extractor) resolveHandlerName(pkg *packages.Package, expr ast.Expr) string {
 	switch h := expr.(type) {
 	case *ast.SelectorExpr:
@@ -294,6 +306,7 @@ func (e *extractor) resolveHandlerName(pkg *packages.Package, expr ast.Expr) str
 	return ""
 }
 
+// extractWithPath extracts a route group from a thx.WithPath call.
 func (e *extractor) extractWithPath(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
 	if len(call.Args) < 2 {
 		return
@@ -331,6 +344,7 @@ func (e *extractor) extractWithPath(pkg *packages.Package, call *ast.CallExpr, t
 	tree.Groups = append(tree.Groups, group)
 }
 
+// extractWithGuard extracts a route group from an auth.WithGuard call.
 func (e *extractor) extractWithGuard(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
 	if len(call.Args) < 2 {
 		return
@@ -360,6 +374,7 @@ func (e *extractor) extractWithGuard(pkg *packages.Package, call *ast.CallExpr, 
 	tree.Groups = append(tree.Groups, group)
 }
 
+// resolveGroupName derives a group name from a Routes() call's receiver type.
 func (e *extractor) resolveGroupName(pkg *packages.Package, expr ast.Expr) string {
 	call, ok := expr.(*ast.CallExpr)
 	if !ok {
@@ -396,12 +411,15 @@ func (e *extractor) resolveGroupName(pkg *packages.Package, expr ast.Expr) strin
 	return titleCase(named.Obj().Pkg().Name())
 }
 
+// extractTransparent extracts routes from wrappers like WithLayout and WithMiddleware
+// that don't create a new route group.
 func (e *extractor) extractTransparent(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
 	for _, arg := range call.Args[1:] {
 		e.extractExpr(pkg, arg, tree)
 	}
 }
 
+// isRoutesCall checks if a call expression is a method call returning thx.Routes.
 func (e *extractor) isRoutesCall(pkg *packages.Package, call *ast.CallExpr) bool {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Routes" {
@@ -421,6 +439,7 @@ func (e *extractor) isRoutesCall(pkg *packages.Package, call *ast.CallExpr) bool
 	return named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == thxPkgPath && named.Obj().Name() == "Routes"
 }
 
+// followRoutesCall resolves a Routes() method call and extracts routes from its body.
 func (e *extractor) followRoutesCall(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
@@ -457,6 +476,7 @@ func (e *extractor) followRoutesCall(pkg *packages.Package, call *ast.CallExpr, 
 	e.extractFromFunc(mi.pkg, mi.decl, tree)
 }
 
+// resolveQueryType extracts the query parameter struct type from a handler's signature.
 func (e *extractor) resolveQueryType(pkg *packages.Package, handlerExpr ast.Expr) *StructInfo {
 	typ := pkg.TypesInfo.TypeOf(handlerExpr)
 	if typ == nil {
@@ -477,6 +497,7 @@ func (e *extractor) resolveQueryType(pkg *packages.Package, handlerExpr ast.Expr
 	return extractStructInfo(qType)
 }
 
+// extractStructInfo extracts schema-tagged fields from a struct type.
 func extractStructInfo(typ types.Type) *StructInfo {
 	st, ok := typ.Underlying().(*types.Struct)
 	if !ok {
@@ -514,6 +535,8 @@ func extractStructInfo(typ types.Type) *StructInfo {
 	return info
 }
 
+// extractStatic extracts a static asset group from a thx.Static call,
+// resolving the embed.FS variable and its //go:embed directory.
 func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tree *RouteTree) error {
 	if len(call.Args) < 2 {
 		return nil
@@ -622,6 +645,7 @@ func (e *extractor) extractStatic(pkg *packages.Package, call *ast.CallExpr, tre
 	return nil
 }
 
+// findPkg looks up a package by its import path.
 func (e *extractor) findPkg(pkgPath string) *packages.Package {
 	for _, p := range e.pkgs {
 		if p.PkgPath == pkgPath {
@@ -631,6 +655,7 @@ func (e *extractor) findPkg(pkgPath string) *packages.Package {
 	return nil
 }
 
+// findEmbedDir extracts the directory from a //go:embed comment group.
 func findEmbedDir(cg *ast.CommentGroup) string {
 	if cg == nil {
 		return ""
@@ -665,6 +690,7 @@ func findEmbedDir(cg *ast.CommentGroup) string {
 	return ""
 }
 
+// resolveFuncName resolves a function expression to its name and package path.
 func (e *extractor) resolveFuncName(pkg *packages.Package, fun ast.Expr) (name, pkgPath string) {
 	switch f := fun.(type) {
 	case *ast.SelectorExpr:
@@ -697,6 +723,7 @@ func (e *extractor) resolveFuncName(pkg *packages.Package, fun ast.Expr) (name, 
 	return "", ""
 }
 
+// resolveRecvType returns the receiver type name from a method's field list.
 func resolveRecvType(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
@@ -714,6 +741,7 @@ func resolveRecvType(recv *ast.FieldList) string {
 	return ""
 }
 
+// stripPointer unwraps a pointer type to its element type.
 func stripPointer(t types.Type) types.Type {
 	if ptr, ok := t.(*types.Pointer); ok {
 		return ptr.Elem()
@@ -721,6 +749,7 @@ func stripPointer(t types.Type) types.Type {
 	return t
 }
 
+// stringLitValue extracts the unquoted value from a string literal expression.
 func stringLitValue(expr ast.Expr) string {
 	lit, ok := expr.(*ast.BasicLit)
 	if !ok {
