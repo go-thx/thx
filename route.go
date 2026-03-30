@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	urlpath "path"
 	"runtime/debug"
 	"strings"
 
@@ -17,7 +17,7 @@ import (
 )
 
 // handlePanic recovers from panics during request handling, logs the
-// error with the stack trace, and invokes the router's ErrorHandler if set.
+// error with the stack trace, and invokes the router's error handler if set.
 // It re-panics on http.ErrAbortHandler to preserve hijack semantics.
 func handlePanic(path string, router *Router, res http.ResponseWriter, req *http.Request) {
 	reason := recover()
@@ -41,7 +41,7 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 
 	res.WriteHeader(http.StatusInternalServerError)
 
-	if router.ErrorHandler != nil {
+	if router.errorHandler != nil {
 		ctx := internal.NewContext(req, res)
 
 		reasonErr, ok := reason.(error)
@@ -49,7 +49,7 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 			reasonErr = fmt.Errorf("panic: %v", reason)
 		}
 
-		router.ErrorHandler(ctx, res, req, reasonErr)
+		router.errorHandler(ctx, res, req, reasonErr)
 	}
 }
 
@@ -65,13 +65,13 @@ func newQueryDecoder() *schema.Decoder {
 	return d
 }
 
-// handleBadRequest writes a 400 status and delegates to the router's ErrorHandler.
+// handleBadRequest writes a 400 status and delegates to the router's error handler.
 func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
 	res.WriteHeader(http.StatusBadRequest)
 
-	if router.ErrorHandler != nil {
+	if router.errorHandler != nil {
 		ctx := internal.NewContext(req, res)
-		router.ErrorHandler(ctx, res, req, err)
+		router.errorHandler(ctx, res, req, err)
 	}
 }
 
@@ -107,7 +107,7 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 // routePath joins the base prefix and the route path, normalizing
 // the root path "/" to "/{$}" for exact matching on the ServeMux.
 func routePath(base, path string) string {
-	p := filepath.Join(base, path)
+	p := urlpath.Join(base, path)
 	if p == "/" {
 		return "/{$}"
 	}
@@ -132,8 +132,8 @@ func wrapMux(mux *http.ServeMux, notFound func() func(http.ResponseWriter, *http
 type route[Q, I any] struct {
 	method     string
 	path       string
-	getHandler GetHandler[Q]
-	handler    Handler[Q, I]
+	getHandler getHandler[Q]
+	handler    handler[Q, I]
 }
 
 // decodeForm decodes the request body into the typed struct I.
@@ -196,7 +196,7 @@ func writeResult(res http.ResponseWriter, result Result) {
 // Apply registers the route on the router's mux with query/form decoding,
 // HTMX partial rendering, layout application, and panic recovery.
 func (r *route[Q, I]) Apply(router *Router) {
-	path := routePath(router.Path, r.path)
+	path := routePath(router.path, r.path)
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
@@ -217,7 +217,7 @@ func (r *route[Q, I]) Apply(router *Router) {
 		}
 
 		ctx := internal.NewContext(req, res)
-		ctx.SetValue(layoutsKey{}, router.Layouts)
+		ctx.SetValue(layoutsKey{}, router.layouts)
 
 		htmx := ctx.HTMX()
 		if htmx.IsRequest() {
@@ -247,29 +247,23 @@ func (r *route[Q, I]) Apply(router *Router) {
 // component directly, and each subsequent layout wraps the previous result.
 type Layout func(templ.Component) templ.Component
 
-// Component is a function that produces a templ.Component from the request context.
-type Component func(internal.Context) templ.Component
+type wrapper func(*Router)
 
-// Wrapper is a Route that directly mutates the Router.
-// Used internally for WithLayout, WithPath, and WithMiddleware.
-type Wrapper func(*Router)
-
-// Apply executes the wrapper function on the given router.
-func (w Wrapper) Apply(router *Router) {
+func (w wrapper) Apply(router *Router) {
 	w(router)
 }
 
 // use returns a Route that registers middleware on the router.
 // Multiple middleware are chained in registration order.
 func use(mw func(http.Handler) http.Handler) Route {
-	return Wrapper(func(r *Router) {
-		if r.Middleware != nil {
-			prev := r.Middleware
-			r.Middleware = func(h http.Handler) http.Handler {
+	return wrapper(func(r *Router) {
+		if r.middleware != nil {
+			prev := r.middleware
+			r.middleware = func(h http.Handler) http.Handler {
 				return prev(mw(h))
 			}
 		} else {
-			r.Middleware = mw
+			r.middleware = mw
 		}
 	})
 }
@@ -299,26 +293,26 @@ func Chain(mws ...func(http.Handler) http.Handler) func(http.Handler) http.Handl
 // so that the grouped routes share middleware and not-found handling.
 // Trailing slashes are redirected to the canonical path without a slash.
 func WithPath(path string, routes ...Route) Routes {
-	return Routes{Wrapper(func(r *Router) {
+	return Routes{wrapper(func(r *Router) {
 		subMux := http.NewServeMux()
 
 		subRouter := &Router{
 			Mux:          subMux,
-			Layouts:      r.Layouts,
-			ErrorHandler: r.ErrorHandler,
+			layouts:      r.layouts,
+			errorHandler: r.errorHandler,
 		}
 
 		for _, route := range routes {
 			route.Apply(subRouter)
 		}
 
-		prefix := filepath.Join(r.Path, path)
+		prefix := urlpath.Join(r.path, path)
 
 		inner := wrapMux(subMux, func() func(http.ResponseWriter, *http.Request) {
-			if subRouter.NotFoundHandler != nil {
-				return subRouter.NotFoundHandler
+			if subRouter.notFoundHandler != nil {
+				return subRouter.notFoundHandler
 			}
-			return r.NotFoundHandler
+			return r.notFoundHandler
 		})
 
 		// Subtree: strip prefix then route via sub-mux
@@ -334,9 +328,9 @@ func WithPath(path string, routes ...Route) Routes {
 		})
 
 		// Middleware wraps outside StripPrefix — sees original request paths
-		if subRouter.Middleware != nil {
-			subtreeHandler = subRouter.Middleware(subtreeHandler)
-			exactHandler = subRouter.Middleware(exactHandler)
+		if subRouter.middleware != nil {
+			subtreeHandler = subRouter.middleware(subtreeHandler)
+			exactHandler = subRouter.middleware(exactHandler)
 		}
 
 		// Subtree: redirect trailing slash, then delegate
@@ -361,32 +355,31 @@ func WithPath(path string, routes ...Route) Routes {
 // The new layout becomes the innermost wrapper, closest to the
 // rendered component. Layouts from parent scopes remain outermost.
 func WithLayout(layout Layout, routes ...Route) Routes {
-	return Routes{Wrapper(func(r *Router) {
+	return Routes{wrapper(func(r *Router) {
 		inner := &Router{
-			Mux:          r.Mux,
-			Path:         r.Path,
-			Layouts:      append([]Layout{layout}, r.Layouts...),
-			ErrorHandler: r.ErrorHandler,
-			Middleware:   r.Middleware,
+			Mux:             r.Mux,
+			path:            r.path,
+			layouts:         append([]Layout{layout}, r.layouts...),
+			errorHandler:    r.errorHandler,
+			notFoundHandler: r.notFoundHandler,
+			middleware:       r.middleware,
 		}
 
 		for _, route := range routes {
 			route.Apply(inner)
 		}
 
-		r.ErrorHandler = inner.ErrorHandler
-		r.NotFoundHandler = inner.NotFoundHandler
-		r.Middleware = inner.Middleware
+		r.errorHandler = inner.errorHandler
+		if inner.notFoundHandler != nil {
+			r.notFoundHandler = inner.notFoundHandler
+		}
+		r.middleware = inner.middleware
 	})}
 }
 
-// GetHandler is a handler function for GET requests.
-// Q is the query parameter type.
-type GetHandler[Q any] func(Context, Q) Result
+type getHandler[Q any] func(Context, Q) Result
 
-// Handler is a handler function for requests with a body (POST, PUT, etc.).
-// Q is the query parameter type, I is the request body input type.
-type Handler[Q, I any] func(Context, Q, I) Result
+type handler[Q, I any] func(Context, Q, I) Result
 
 // Routes is an ordered collection of Route values that applies as a group.
 type Routes []Route
@@ -401,22 +394,22 @@ func (r Routes) Apply(router *Router) {
 // HandleNotFound registers a custom 404 page rendered with the given component.
 // The component receives the request context so it can access path values,
 // HTMX state, etc.
-func HandleNotFound(comp Component) Route {
+func HandleNotFound(comp func(Context) templ.Component) Route {
 	return &notFound{comp: comp}
 }
 
 type notFound struct {
-	comp Component
+	comp func(Context) templ.Component
 }
 
-// Apply sets the router's NotFoundHandler to render the component with layouts.
+// Apply sets the router's not-found handler to render the component with layouts.
 func (n *notFound) Apply(router *Router) {
-	router.NotFoundHandler = func(res http.ResponseWriter, req *http.Request) {
+	router.notFoundHandler = func(res http.ResponseWriter, req *http.Request) {
 		ctx := internal.NewContext(req, res)
 
 		res.WriteHeader(http.StatusNotFound)
 
-		if err := applyLayouts(ctx, n.comp(ctx), router.Layouts).Render(ctx, res); err != nil {
+		if err := applyLayouts(ctx, n.comp(ctx), router.layouts).Render(ctx, res); err != nil {
 			res.WriteHeader(http.StatusInternalServerError)
 		}
 	}
@@ -424,18 +417,18 @@ func (n *notFound) Apply(router *Router) {
 
 // HandleInternalError registers a custom error page rendered when a handler
 // panics or returns an error. The component receives the request context.
-func HandleInternalError(comp Component) Route {
+func HandleInternalError(comp func(Context) templ.Component) Route {
 	return &internalError{comp: comp}
 }
 
 type internalError struct {
-	comp Component
+	comp func(Context) templ.Component
 }
 
-// Apply sets the router's ErrorHandler to render the component with layouts.
+// Apply sets the router's error handler to render the component with layouts.
 func (i *internalError) Apply(router *Router) {
-	router.ErrorHandler = func(ctx Context, res http.ResponseWriter, req *http.Request, err error) {
-		if err := applyLayouts(ctx, i.comp(ctx), router.Layouts).Render(ctx, res); err != nil {
+	router.errorHandler = func(ctx Context, res http.ResponseWriter, req *http.Request, err error) {
+		if err := applyLayouts(ctx, i.comp(ctx), router.layouts).Render(ctx, res); err != nil {
 			res.WriteHeader(http.StatusInternalServerError)
 		}
 	}

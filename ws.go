@@ -10,14 +10,12 @@ import (
 	"github.com/go-thx/thx/internal"
 )
 
-// WSHandler is a handler function for WebSocket connections.
-// Q is the query parameter type.
-type WSHandler[Q any] func(ctx Context, query Q, conn *WSConn)
+type wsHandler[Q any] func(ctx Context, query Q, conn *WSConn)
 
 // WS registers a WebSocket route at the given path. The handler receives
 // a WSConn for bidirectional communication. Optional AcceptOptions
 // configure the WebSocket upgrade; by default, origin checking is skipped.
-func WS[Q any](path string, handler WSHandler[Q], acceptOpts ...*websocket.AcceptOptions) Route {
+func WS[Q any](path string, handler func(ctx Context, query Q, conn *WSConn), acceptOpts ...*websocket.AcceptOptions) Route {
 	var opts *websocket.AcceptOptions
 	if len(acceptOpts) > 0 {
 		opts = acceptOpts[0]
@@ -35,14 +33,14 @@ func WS[Q any](path string, handler WSHandler[Q], acceptOpts ...*websocket.Accep
 
 type wsRoute[Q any] struct {
 	path          string
-	handler       WSHandler[Q]
+	handler       wsHandler[Q]
 	acceptOptions *websocket.AcceptOptions
 }
 
 // Apply registers the WebSocket route on the router's mux as a GET handler
 // that upgrades the connection to WebSocket.
 func (r *wsRoute[Q]) Apply(router *Router) {
-	path := routePath(router.Path, r.path)
+	path := routePath(router.path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)

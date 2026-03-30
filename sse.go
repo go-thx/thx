@@ -9,9 +9,7 @@ import (
 	"github.com/go-thx/thx/internal"
 )
 
-// SSEHandler is a handler function for Server-Sent Events connections.
-// Q is the query parameter type.
-type SSEHandler[Q any] func(ctx Context, query Q, stream EventStream)
+type sseHandler[Q any] func(ctx Context, query Q, stream EventStream)
 
 // EventStream provides methods for sending Server-Sent Events to the client.
 type EventStream interface {
@@ -26,7 +24,7 @@ type EventStream interface {
 // SSE registers a Server-Sent Events route at the given path.
 // The handler receives an EventStream for pushing events to the client.
 // The connection stays open until the handler returns or the client disconnects.
-func SSE[Q any](path string, handler SSEHandler[Q]) Route {
+func SSE[Q any](path string, handler func(ctx Context, query Q, stream EventStream)) Route {
 	return &sseRoute[Q]{
 		path:    path,
 		handler: handler,
@@ -35,13 +33,13 @@ func SSE[Q any](path string, handler SSEHandler[Q]) Route {
 
 type sseRoute[Q any] struct {
 	path    string
-	handler SSEHandler[Q]
+	handler sseHandler[Q]
 }
 
 // Apply registers the SSE route on the router's mux as a GET handler
 // that sets the appropriate SSE headers and streams events.
 func (r *sseRoute[Q]) Apply(router *Router) {
-	path := routePath(router.Path, r.path)
+	path := routePath(router.path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)
