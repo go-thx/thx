@@ -243,7 +243,8 @@ func (r *route[Q, I]) Apply(router *Router) {
 }
 
 // Layout wraps a templ component with surrounding markup (e.g. a page shell).
-// Layouts nest: the first layout applied is the outermost wrapper.
+// Layouts nest innermost-first: the first layout in the slice wraps the
+// component directly, and each subsequent layout wraps the previous result.
 type Layout func(templ.Component) templ.Component
 
 // Component is a function that produces a templ.Component from the request context.

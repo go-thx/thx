@@ -19,7 +19,8 @@ type Router struct {
 
 	// Path is the current URL prefix for scoped routes.
 	Path string
-	// Layouts are applied outermost-first to rendered components.
+	// Layouts are applied innermost-first: the first element wraps the
+	// component directly, and each subsequent layout wraps the previous result.
 	Layouts []Layout
 	// Middleware wraps the final handler for the current scope.
 	Middleware func(http.Handler) http.Handler
