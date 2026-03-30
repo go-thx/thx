@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"path/filepath"
+	urlpath "path"
 	"runtime/debug"
 	"strings"
 
@@ -107,7 +107,7 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 // routePath joins the base prefix and the route path, normalizing
 // the root path "/" to "/{$}" for exact matching on the ServeMux.
 func routePath(base, path string) string {
-	p := filepath.Join(base, path)
+	p := urlpath.Join(base, path)
 	if p == "/" {
 		return "/{$}"
 	}
@@ -308,7 +308,7 @@ func WithPath(path string, routes ...Route) Routes {
 			route.Apply(subRouter)
 		}
 
-		prefix := filepath.Join(r.path, path)
+		prefix := urlpath.Join(r.path, path)
 
 		inner := wrapMux(subMux, func() func(http.ResponseWriter, *http.Request) {
 			if subRouter.notFoundHandler != nil {
@@ -359,11 +359,12 @@ func WithPath(path string, routes ...Route) Routes {
 func WithLayout(layout Layout, routes ...Route) Routes {
 	return Routes{wrapper(func(r *Router) {
 		inner := &Router{
-			Mux:          r.Mux,
-			path:         r.path,
-			layouts:      append([]Layout{layout}, r.layouts...),
-			errorHandler: r.errorHandler,
-			middleware:   r.middleware,
+			Mux:             r.Mux,
+			path:            r.path,
+			layouts:         append([]Layout{layout}, r.layouts...),
+			errorHandler:    r.errorHandler,
+			notFoundHandler: r.notFoundHandler,
+			middleware:       r.middleware,
 		}
 
 		for _, route := range routes {
@@ -371,7 +372,9 @@ func WithLayout(layout Layout, routes ...Route) Routes {
 		}
 
 		r.errorHandler = inner.errorHandler
-		r.notFoundHandler = inner.notFoundHandler
+		if inner.notFoundHandler != nil {
+			r.notFoundHandler = inner.notFoundHandler
+		}
 		r.middleware = inner.middleware
 	})}
 }
