@@ -17,18 +17,11 @@ type Router struct {
 	// Mux is the underlying ServeMux. Exposed for direct handler registration.
 	Mux *http.ServeMux
 
-	// Path is the current URL prefix for scoped routes.
-	Path string
-	// Layouts are applied innermost-first: the first element wraps the
-	// component directly, and each subsequent layout wraps the previous result.
-	Layouts []Layout
-	// Middleware wraps the final handler for the current scope.
-	Middleware func(http.Handler) http.Handler
-
-	// ErrorHandler is called on panics and bad requests if set.
-	ErrorHandler func(Context, http.ResponseWriter, *http.Request, error)
-	// NotFoundHandler is called when no route matches.
-	NotFoundHandler func(http.ResponseWriter, *http.Request)
+	path            string
+	layouts         []Layout
+	middleware      func(http.Handler) http.Handler
+	errorHandler    func(Context, http.ResponseWriter, *http.Request, error)
+	notFoundHandler func(http.ResponseWriter, *http.Request)
 }
 
 // New creates an http.Handler from the given routes.
@@ -39,7 +32,7 @@ func New(routes ...Route) http.Handler {
 
 	router := &Router{
 		Mux:             mux,
-		NotFoundHandler: http.NotFound,
+		notFoundHandler: http.NotFound,
 	}
 
 	for _, route := range routes {
@@ -47,11 +40,11 @@ func New(routes ...Route) http.Handler {
 	}
 
 	var handler http.Handler = wrapMux(mux, func() func(http.ResponseWriter, *http.Request) {
-		return router.NotFoundHandler
+		return router.notFoundHandler
 	})
 
-	if router.Middleware != nil {
-		handler = router.Middleware(handler)
+	if router.middleware != nil {
+		handler = router.middleware(handler)
 	}
 
 	return handler

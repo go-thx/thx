@@ -49,32 +49,31 @@ func Raw(val string) Result {
 // Chain with Render, JSON, Raw, or Empty to complete the result.
 //
 //	return thx.Status(http.StatusCreated).JSON(user)
-func Status(code int) *StatusBuilder {
-	return &StatusBuilder{code: code}
+func Status(code int) *statusBuilder {
+	return &statusBuilder{code: code}
 }
 
-// StatusBuilder constructs results with a specific HTTP status code.
-type StatusBuilder struct {
+type statusBuilder struct {
 	code int
 }
 
 // Render returns a Result that renders the component with the configured status code.
-func (s *StatusBuilder) Render(ctx Context, comp templ.Component) Result {
+func (s *statusBuilder) Render(ctx Context, comp templ.Component) Result {
 	return &renderResult{ctx: ctx, comp: comp, status: s.code}
 }
 
 // JSON returns a Result that serializes data as JSON with the configured status code.
-func (s *StatusBuilder) JSON(data any) Result {
+func (s *statusBuilder) JSON(data any) Result {
 	return &jsonResult{data: data, status: s.code}
 }
 
 // Raw returns a Result that writes the string as plain text with the configured status code.
-func (s *StatusBuilder) Raw(val string) Result {
+func (s *statusBuilder) Raw(val string) Result {
 	return &rawResult{val: val, status: s.code}
 }
 
 // Empty returns a Result that writes only the configured status code with no body.
-func (s *StatusBuilder) Empty() Result {
+func (s *statusBuilder) Empty() Result {
 	return &statusResult{code: s.code}
 }
 

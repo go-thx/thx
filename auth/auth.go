@@ -19,8 +19,8 @@ type Handler[T, Q, I any] func(Context[T], Q, I) thx.Result
 
 // Get wraps an authenticated GET handler into a standard GetHandler.
 // Panics if the request is not authorized — use WithGuard to protect routes.
-func Get[T, Q any](handler GetHandler[T, Q]) thx.GetHandler[Q] {
-	return func(ctx internal.Context, query Q) thx.Result {
+func Get[T, Q any](handler GetHandler[T, Q]) func(thx.Context, Q) thx.Result {
+	return func(ctx thx.Context, query Q) thx.Result {
 		if !ctx.IsAuthorized() {
 			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")
 		}
@@ -30,7 +30,7 @@ func Get[T, Q any](handler GetHandler[T, Q]) thx.GetHandler[Q] {
 
 // Route wraps an authenticated handler (with body) into a standard Handler.
 // Panics if the request is not authorized — use WithGuard to protect routes.
-func Route[T, Q, I any](handler Handler[T, Q, I]) thx.Handler[Q, I] {
+func Route[T, Q, I any](handler Handler[T, Q, I]) func(thx.Context, Q, I) thx.Result {
 	return func(ctx thx.Context, query Q, in I) thx.Result {
 		if !ctx.IsAuthorized() {
 			panic("auth: unauthorized request reached auth handler (missing WithGuard?)")

@@ -23,7 +23,7 @@ type staticRoute struct {
 func (s *staticRoute) Apply(router *Router) {
 	handler := http.FileServerFS(noDirectoryListing(s.fsys))
 
-	prefix := path.Join(router.Path, s.prefix)
+	prefix := path.Join(router.path, s.prefix)
 	pattern := prefix
 	if !strings.HasSuffix(pattern, "/") {
 		pattern += "/"
