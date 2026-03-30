@@ -17,7 +17,7 @@ import (
 )
 
 // handlePanic recovers from panics during request handling, logs the
-// error with the stack trace, and invokes the router's ErrorHandler if set.
+// error with the stack trace, and invokes the router's error handler if set.
 // It re-panics on http.ErrAbortHandler to preserve hijack semantics.
 func handlePanic(path string, router *Router, res http.ResponseWriter, req *http.Request) {
 	reason := recover()
@@ -65,7 +65,7 @@ func newQueryDecoder() *schema.Decoder {
 	return d
 }
 
-// handleBadRequest writes a 400 status and delegates to the router's ErrorHandler.
+// handleBadRequest writes a 400 status and delegates to the router's error handler.
 func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
 	res.WriteHeader(http.StatusBadRequest)
 
@@ -247,8 +247,6 @@ func (r *route[Q, I]) Apply(router *Router) {
 // component directly, and each subsequent layout wraps the previous result.
 type Layout func(templ.Component) templ.Component
 
-type component func(internal.Context) templ.Component
-
 type wrapper func(*Router)
 
 func (w wrapper) Apply(router *Router) {
@@ -404,7 +402,7 @@ type notFound struct {
 	comp func(Context) templ.Component
 }
 
-// Apply sets the router's NotFoundHandler to render the component with layouts.
+// Apply sets the router's not-found handler to render the component with layouts.
 func (n *notFound) Apply(router *Router) {
 	router.notFoundHandler = func(res http.ResponseWriter, req *http.Request) {
 		ctx := internal.NewContext(req, res)
@@ -427,7 +425,7 @@ type internalError struct {
 	comp func(Context) templ.Component
 }
 
-// Apply sets the router's ErrorHandler to render the component with layouts.
+// Apply sets the router's error handler to render the component with layouts.
 func (i *internalError) Apply(router *Router) {
 	router.errorHandler = func(ctx Context, res http.ResponseWriter, req *http.Request, err error) {
 		if err := applyLayouts(ctx, i.comp(ctx), router.layouts).Render(ctx, res); err != nil {
