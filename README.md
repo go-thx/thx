@@ -16,7 +16,7 @@
     &nbsp;
     <a href="https://github.com/a-h/templ"><img src="https://img.shields.io/badge/go--templ-v0.3.1001-informational" alt="Go-Templ v0.3.1001"></a>
     &nbsp;
-    <a href="https://github.com/bigskysoftware/htmx"><img src="https://img.shields.io/badge/htmx-v4.0.0--alpha8-informational" alt="HTMX v4.0.0-alpha8"></a>
+    <a href="https://github.com/bigskysoftware/htmx"><img src="https://img.shields.io/badge/htmx-v4.0.0--beta1-informational" alt="HTMX v4.0.0-beta1"></a>
     &nbsp;
 </p>
 

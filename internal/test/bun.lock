@@ -5,14 +5,14 @@
     "": {
       "name": "thx-test",
       "dependencies": {
-        "htmx.org": "v4.0.0-alpha8",
+        "htmx.org": "4.0.0-beta1",
       },
     },
   },
   "packages": {
     "fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
 
-    "htmx.org": ["htmx.org@4.0.0-alpha8", "", { "dependencies": { "playwright": "^1.58.2" } }, "sha512-2lLFvSYgOMXrgFidWcC8CRc51bcsrvXBG9N2VaWBCdTIZJG2Wo3v5fJdi21AL2hPz6qotwZkWEnR5rS9QYO7oA=="],
+    "htmx.org": ["htmx.org@4.0.0-beta1", "", { "dependencies": { "playwright": "^1.58.2" } }, "sha512-vLcu7JswMeZ7qeJnVHqV1iWGr/C8Osc4+xt2kXBpOC1vG2EoPf8sDAl+xYKDwB/wsRZbCSPkfJLMlyxW7Oz6jw=="],
 
     "playwright": ["playwright@1.58.2", "", { "dependencies": { "playwright-core": "1.58.2" }, "optionalDependencies": { "fsevents": "2.3.2" }, "bin": { "playwright": "cli.js" } }, "sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A=="],
 
