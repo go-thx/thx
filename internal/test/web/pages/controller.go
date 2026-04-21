@@ -35,32 +35,34 @@ func New(
 }
 
 func (c *Controller) Routes() thx.Routes {
-	return thx.WithMiddleware(
-		thx.Chain(
-			mw.RequestID,
-			c.logger,
-			mw.CSRF(csrfKey),
-			mw.Nonce, // TODO: lazy load possible?
-			authMiddleware,
-		),
-		thx.WithLayout(baseLayout,
-			thx.Static("/assets", assets.Assets()),
+	return thx.Routes{
+		thx.Static("/assets", assets.Assets()),
 
-			thx.Get("/", c.getIndex),
-
-			thx.WithPath("/public", c.public.Routes()),
-
-			thxauth.WithGuard("/private",
-				c.private.Routes(),
-				thxauth.RedirectUnauthorized(routes.Public().GetLogin().Path()),
-				thxauth.RedirectWithCurrentPath(public.ParamPath),
+		thx.WithMiddleware(
+			thx.Chain(
+				mw.RequestID,
+				c.logger,
+				mw.CSRF(csrfKey),
+				mw.Nonce,
+				authMiddleware,
 			),
+			thx.WithLayout(baseLayout,
+				thx.Get("/", c.getIndex),
 
-			thx.HandleNotFound(func(ctx thx.Context) templ.Component {
-				return notFound()
-			}),
+				thx.WithPath("/public", c.public.Routes()),
+
+				thxauth.WithGuard("/private",
+					c.private.Routes(),
+					thxauth.RedirectUnauthorized(routes.Public().GetLogin().Path()),
+					thxauth.RedirectWithCurrentPath(public.ParamPath),
+				),
+
+				thx.HandleNotFound(func(ctx thx.Context) templ.Component {
+					return notFound()
+				}),
+			),
 		),
-	)
+	}
 }
 
 func authMiddleware(next http.Handler) http.Handler {

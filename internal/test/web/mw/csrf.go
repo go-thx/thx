@@ -63,6 +63,11 @@ func CSRFFieldName() string {
 	return csrfFieldName
 }
 
+// CSRFHeaderName returns the expected header name for the CSRF token.
+func CSRFHeaderName() string {
+	return csrfHeaderName
+}
+
 func getOrCreateSecret(w http.ResponseWriter, r *http.Request) string {
 	if c, err := r.Cookie(csrfCookieName); err == nil && c.Value != "" {
 		return c.Value
