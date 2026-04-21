@@ -1,18 +1,27 @@
 package pages
 
-import "thx.test/gen/routes"
+import (
+	"context"
+	"thx.test/gen/routes"
+	"thx.test/web/mw"
+)
 
 templ baseLayout(content templ.Component) {
 	<!DOCTYPE html>
 	<html lang="en">
 		<head>
 			<title>THX</title>
-            <script src={ routes.Assets().HtmxMinJs() }></script>
-            <script src={ routes.Assets().HxWsMinJs() }></script>
-            <script src={ routes.Assets().HxSseMinJs() }></script>
+			<script src={ routes.Assets().HtmxMinJs() } nonce={ mw.GetNonce(ctx) }></script>
+			<script src={ routes.Assets().HxWsMinJs() } nonce={ mw.GetNonce(ctx) }></script>
+			<script src={ routes.Assets().HxSseMinJs() } nonce={ mw.GetNonce(ctx) }></script>
+			<meta name="csrf-token" content={ mw.GetCSRFToken(ctx) }/>
 		</head>
-		<body hx-ext="preload">
+		<body hx-ext="preload" hx-headers={ csrfHeader(ctx) }>
 			@content
 		</body>
 	</html>
+}
+
+func csrfHeader(ctx context.Context) string {
+	return `{"` + mw.CSRFHeaderName() + `":"` + mw.GetCSRFToken(ctx) + `"}`
 }

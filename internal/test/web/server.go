@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-thx/thx"
 	"golang.org/x/sync/errgroup"
-	"thx.test/model"
 	"thx.test/web/pages"
 )
 
@@ -24,20 +23,8 @@ func New(pages *pages.Controller) *Server {
 	mux.Handle("/", thx.New(pages.Routes()...))
 
 	return &Server{
-		mux: authMiddleware(mux),
+		mux: mux,
 	}
-}
-
-func authMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		cookie, err := req.Cookie("auth")
-		
-		if err == nil && cookie.Value == "logged-in" {
-			req = req.WithContext(thx.SetAuth(req.Context(), model.User{1, "User"}))
-		}
-
-		next.ServeHTTP(res, req)
-	})
 }
 
 func (s *Server) Run(ctx context.Context) error {
