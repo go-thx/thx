@@ -56,6 +56,7 @@ func Assets() assets {
 
 type assets struct{}
 
-func (_ assets) HtmxMinJs() string  { return "/assets/htmx.min.js?v=b08c3b13d429" }
-func (_ assets) HxSseMinJs() string { return "/assets/hx-sse.min.js?v=c39427753fd3" }
-func (_ assets) HxWsMinJs() string  { return "/assets/hx-ws.min.js?v=95652adaef22" }
+func (_ assets) HtmxMinJs() string     { return "/assets/htmx.min.js?v=192d2d425dda" }
+func (_ assets) HxSseMinJs() string    { return "/assets/hx-sse.min.js?v=fcc844a52779" }
+func (_ assets) HxWsMinJs() string     { return "/assets/hx-ws.min.js?v=deaf497b3b58" }
+func (_ assets) HxPreloadMinJs() string { return "/assets/hx-preload.min.js?v=7b08d98f0e2c" }

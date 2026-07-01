@@ -11,12 +11,14 @@ templ baseLayout(content templ.Component) {
 	<html lang="en">
 		<head>
 			<title>THX</title>
+			<meta name="htmx-config" content="extensions:hx-preload,hx-ws,hx-sse"/>
 			<script src={ routes.Assets().HtmxMinJs() } nonce={ mw.GetNonce(ctx) }></script>
+			<script src={ routes.Assets().HxPreloadMinJs() } nonce={ mw.GetNonce(ctx) }></script>
 			<script src={ routes.Assets().HxWsMinJs() } nonce={ mw.GetNonce(ctx) }></script>
 			<script src={ routes.Assets().HxSseMinJs() } nonce={ mw.GetNonce(ctx) }></script>
 			<meta name="csrf-token" content={ mw.GetCSRFToken(ctx) }/>
 		</head>
-		<body hx-ext="preload" hx-headers={ csrfHeader(ctx) }>
+		<body hx-headers={ csrfHeader(ctx) }>
 			@content
 		</body>
 	</html>
