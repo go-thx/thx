@@ -171,10 +171,12 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 	return in, true
 }
 
-// applyLayouts wraps the component with all layouts unless the
-// context has opted out via WithoutLayouts.
+// applyLayouts wraps the component with all layouts unless the context
+// opted out via WithoutLayouts — except on HTMX history restore, where
+// the full page is always rendered to avoid restoring a bare fragment.
 func applyLayouts(ctx internal.Context, comp templ.Component, layouts []Layout) templ.Component {
-	if ctx.IsWithoutLayouts() && !ctx.HTMX().IsHistoryRestoreRequest() {
+	hx := ctx.HTMX()
+	if ctx.IsWithoutLayouts() && !(hx.IsRequest() && hx.IsHistoryRestoreRequest()) {
 		return comp
 	}
 	for _, layout := range layouts {
