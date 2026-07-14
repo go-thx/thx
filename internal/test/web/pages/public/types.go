@@ -1,13 +1,13 @@
 package public
 
 type loginQuery struct {
-	Path string `schema:"path"`
+	Path string `thx:"path"`
 }
 
 type loginForm struct {
-	Email    string `schema:"email"`
-	Password string `schema:"password"` //nolint:gosec // form binding, immediately hashed
-	Path     string `schema:"path"`
+	Email    string `thx:"email"`
+	Password string `thx:"password"` //nolint:gosec // form binding, immediately hashed
+	Path     string `thx:"path"`
 }
 
 type loginProps struct {
