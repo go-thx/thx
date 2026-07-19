@@ -167,6 +167,62 @@ func TestDecodeCustomConverter(t *testing.T) {
 	}
 }
 
+func TestDecodeUnexportedTagged(t *testing.T) {
+	type form struct {
+		secret string `thx:"secret"` //nolint:unused // asserts unexported fields are skipped
+		Name   string `thx:"name"`
+	}
+
+	var got form
+	src := map[string][]string{"secret": {"x"}, "name": {"ok"}}
+
+	d := NewDecoder()
+	d.IgnoreUnknownKeys(true)
+	if err := d.Decode(&got, src); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Name != "ok" {
+		t.Fatalf("name: %q", got.Name)
+	}
+}
+
+func TestDecodeConverterPointer(t *testing.T) {
+	type form struct {
+		At *time.Time `thx:"at"`
+	}
+
+	d := NewDecoder()
+	d.RegisterConverter(time.Time{}, func(s string) reflect.Value {
+		ts, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return reflect.Value{}
+		}
+		return reflect.ValueOf(ts)
+	})
+
+	var got form
+	if err := d.Decode(&got, map[string][]string{"at": {"2026-07-14T00:00:00Z"}}); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.At == nil || !got.At.Equal(time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("at: %v", got.At)
+	}
+}
+
+func TestDecodeBytes(t *testing.T) {
+	type form struct {
+		Blob []byte `thx:"blob"`
+	}
+
+	var got form
+	if err := NewDecoder().Decode(&got, map[string][]string{"blob": {"hello"}}); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if string(got.Blob) != "hello" {
+		t.Fatalf("blob: %q", got.Blob)
+	}
+}
+
 func TestDecodeErrors(t *testing.T) {
 	type form struct {
 		Age int `thx:"age"`

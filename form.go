@@ -145,6 +145,11 @@ func (d *Decoder) setScalar(target reflect.Value, typ reflect.Type, raw string) 
 		}
 	}
 
+	if typ.Kind() == reflect.Slice && typ.Elem().Kind() == reflect.Uint8 {
+		target.SetBytes([]byte(raw))
+		return nil
+	}
+
 	switch typ.Kind() {
 	case reflect.String:
 		target.SetString(raw)
@@ -215,10 +220,10 @@ func (d *Decoder) buildFields(typ reflect.Type, indexPrefix []int, keyPrefix str
 			}
 		}
 
+		if !sf.IsExported() {
+			continue
+		}
 		if name == "" {
-			if !sf.IsExported() {
-				continue
-			}
 			name = sf.Name
 		}
 
@@ -242,6 +247,9 @@ func (d *Decoder) buildFields(typ reflect.Type, indexPrefix []int, keyPrefix str
 // encoding.TextUnmarshaler.
 func (d *Decoder) isLeaf(typ reflect.Type) bool {
 	if _, ok := d.converters[typ]; ok {
+		return true
+	}
+	if _, ok := d.converters[deref(typ)]; ok {
 		return true
 	}
 	return isTextUnmarshaler(typ)
