@@ -25,16 +25,16 @@ func TestDecodeScalars(t *testing.T) {
 		"Bare":   {"bare"},
 	}
 
-	d := NewDecoder()
-	d.IgnoreUnknownKeys(true)
-	if err := d.Decode(&got, map[string][]string{"Ignored": {"nope"}}); err != nil {
+	d := newDecoder()
+	d.ignoreUnknownKeys(true)
+	if err := d.decode(&got, map[string][]string{"Ignored": {"nope"}}); err != nil {
 		t.Fatalf("decode ignored: %v", err)
 	}
 	if got.Ignored != "" {
 		t.Fatalf("thx:\"-\" field was populated: %q", got.Ignored)
 	}
 
-	if err := NewDecoder().Decode(&got, src); err != nil {
+	if err := newDecoder().decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 
@@ -56,7 +56,7 @@ func TestDecodeSliceAndLastWins(t *testing.T) {
 		"single": {"first", "last"},
 	}
 
-	if err := NewDecoder().Decode(&got, src); err != nil {
+	if err := newDecoder().decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestDecodePointerAndNested(t *testing.T) {
 		"home.city": {"munich"},
 	}
 
-	if err := NewDecoder().Decode(&got, src); err != nil {
+	if err := newDecoder().decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestDecodeEmbedded(t *testing.T) {
 	var got form
 	src := map[string][]string{"id": {"x1"}, "name": {"n"}}
 
-	if err := NewDecoder().Decode(&got, src); err != nil {
+	if err := newDecoder().decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if got.ID != "x1" || got.Name != "n" {
@@ -128,14 +128,14 @@ func TestDecodeIgnoreUnknown(t *testing.T) {
 	src := map[string][]string{"name": {"a"}, "extra": {"b"}}
 
 	var strict form
-	if err := NewDecoder().Decode(&strict, src); err == nil {
+	if err := newDecoder().decode(&strict, src); err == nil {
 		t.Fatal("expected error on unknown key")
 	}
 
-	d := NewDecoder()
-	d.IgnoreUnknownKeys(true)
+	d := newDecoder()
+	d.ignoreUnknownKeys(true)
 	var lax form
-	if err := d.Decode(&lax, src); err != nil {
+	if err := d.decode(&lax, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if lax.Name != "a" {
@@ -148,8 +148,8 @@ func TestDecodeCustomConverter(t *testing.T) {
 		At time.Time `thx:"at"`
 	}
 
-	d := NewDecoder()
-	d.RegisterConverter(time.Time{}, func(s string) reflect.Value {
+	d := newDecoder()
+	d.registerConverter(time.Time{}, func(s string) reflect.Value {
 		ts, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			return reflect.Value{}
@@ -159,7 +159,7 @@ func TestDecodeCustomConverter(t *testing.T) {
 
 	var got form
 	src := map[string][]string{"at": {"2026-07-14T00:00:00Z"}}
-	if err := d.Decode(&got, src); err != nil {
+	if err := d.decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if !got.At.Equal(time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)) {
@@ -176,9 +176,9 @@ func TestDecodeUnexportedTagged(t *testing.T) {
 	var got form
 	src := map[string][]string{"secret": {"x"}, "name": {"ok"}}
 
-	d := NewDecoder()
-	d.IgnoreUnknownKeys(true)
-	if err := d.Decode(&got, src); err != nil {
+	d := newDecoder()
+	d.ignoreUnknownKeys(true)
+	if err := d.decode(&got, src); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if got.Name != "ok" {
@@ -191,8 +191,8 @@ func TestDecodeConverterPointer(t *testing.T) {
 		At *time.Time `thx:"at"`
 	}
 
-	d := NewDecoder()
-	d.RegisterConverter(time.Time{}, func(s string) reflect.Value {
+	d := newDecoder()
+	d.registerConverter(time.Time{}, func(s string) reflect.Value {
 		ts, err := time.Parse(time.RFC3339, s)
 		if err != nil {
 			return reflect.Value{}
@@ -201,7 +201,7 @@ func TestDecodeConverterPointer(t *testing.T) {
 	})
 
 	var got form
-	if err := d.Decode(&got, map[string][]string{"at": {"2026-07-14T00:00:00Z"}}); err != nil {
+	if err := d.decode(&got, map[string][]string{"at": {"2026-07-14T00:00:00Z"}}); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if got.At == nil || !got.At.Equal(time.Date(2026, 7, 14, 0, 0, 0, 0, time.UTC)) {
@@ -215,7 +215,7 @@ func TestDecodeBytes(t *testing.T) {
 	}
 
 	var got form
-	if err := NewDecoder().Decode(&got, map[string][]string{"blob": {"hello"}}); err != nil {
+	if err := newDecoder().decode(&got, map[string][]string{"blob": {"hello"}}); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if string(got.Blob) != "hello" {
@@ -228,12 +228,12 @@ func TestDecodeErrors(t *testing.T) {
 		Age int `thx:"age"`
 	}
 
-	if err := NewDecoder().Decode(form{}, nil); err == nil {
+	if err := newDecoder().decode(form{}, nil); err == nil {
 		t.Fatal("expected error for non-pointer")
 	}
 
 	var got form
-	if err := NewDecoder().Decode(&got, map[string][]string{"age": {"nope"}}); err == nil {
+	if err := newDecoder().decode(&got, map[string][]string{"age": {"nope"}}); err == nil {
 		t.Fatal("expected error for bad int")
 	}
 }
