@@ -55,13 +55,13 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 
 var (
 	queryDecoder = newQueryDecoder()
-	formDecoder  = NewDecoder()
+	formDecoder  = newDecoder()
 )
 
 // newQueryDecoder creates a decoder configured to ignore unknown query keys.
-func newQueryDecoder() *Decoder {
-	d := NewDecoder()
-	d.IgnoreUnknownKeys(true)
+func newQueryDecoder() *decoder {
+	d := newDecoder()
+	d.ignoreUnknownKeys(true)
 	return d
 }
 
@@ -96,7 +96,7 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 		}
 	}
 
-	if err := queryDecoder.Decode(&queryData, query); err != nil {
+	if err := queryDecoder.decode(&queryData, query); err != nil {
 		handleBadRequest(err, req, res, router)
 		return queryData, false
 	}
@@ -163,7 +163,7 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 		}
 	}
 
-	if err := formDecoder.Decode(&in, req.PostForm); err != nil {
+	if err := formDecoder.decode(&in, req.PostForm); err != nil {
 		handleBadRequest(err, req, res, router)
 		return in, false
 	}
@@ -200,9 +200,9 @@ func writeResult(res http.ResponseWriter, result Result) {
 func (r *route[Q, I]) Apply(router *Router) {
 	path := routePath(router.path, r.path)
 
-	queryDecoder.Warm(reflect.TypeFor[Q]())
+	queryDecoder.warm(reflect.TypeFor[Q]())
 	if r.getHandler == nil {
-		formDecoder.Warm(reflect.TypeFor[I]())
+		formDecoder.warm(reflect.TypeFor[I]())
 	}
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {

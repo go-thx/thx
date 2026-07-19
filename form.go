@@ -13,34 +13,34 @@ import (
 // fields. A field tagged `thx:"-"` is skipped entirely.
 const tagName = "thx"
 
-// Converter turns a single raw string value into a reflect.Value of the target
-// type. Register one via Decoder.RegisterConverter to control how a custom type
+// converter turns a single raw string value into a reflect.Value of the target
+// type. Register one via decoder.registerConverter to control how a custom type
 // is decoded. It returns the zero Value if the input cannot be converted.
-type Converter func(string) reflect.Value
+type converter func(string) reflect.Value
 
-// Decoder decodes url.Values-shaped data (map[string][]string) into a struct
+// decoder decodes url.Values-shaped data (map[string][]string) into a struct
 // using `thx` struct tags. It is safe for concurrent use once configured.
-type Decoder struct {
+type decoder struct {
 	ignoreUnknown bool
-	converters    map[reflect.Type]Converter
+	converters    map[reflect.Type]converter
 	cache         sync.Map // reflect.Type -> map[string]field
 }
 
-// NewDecoder returns a Decoder that maps struct fields by their `thx` tag.
-func NewDecoder() *Decoder {
-	return &Decoder{converters: map[reflect.Type]Converter{}}
+// newDecoder returns a decoder that maps struct fields by their `thx` tag.
+func newDecoder() *decoder {
+	return &decoder{converters: map[reflect.Type]converter{}}
 }
 
-// IgnoreUnknownKeys controls whether keys without a matching struct field are
-// silently ignored (true) or cause Decode to return an error (false).
-func (d *Decoder) IgnoreUnknownKeys(ignore bool) {
+// ignoreUnknownKeys controls whether keys without a matching struct field are
+// silently ignored (true) or cause decode to return an error (false).
+func (d *decoder) ignoreUnknownKeys(ignore bool) {
 	d.ignoreUnknown = ignore
 }
 
-// RegisterConverter registers a Converter for the type of value, overriding the
+// registerConverter registers a converter for the type of value, overriding the
 // built-in decoding for that type.
-func (d *Decoder) RegisterConverter(value any, converter Converter) {
-	d.converters[reflect.TypeOf(value)] = converter
+func (d *decoder) registerConverter(value any, conv converter) {
+	d.converters[reflect.TypeOf(value)] = conv
 }
 
 // field is a decodable leaf, addressed by its full dotted key. index is the
@@ -50,10 +50,10 @@ type field struct {
 	typ   reflect.Type
 }
 
-// Warm builds and caches the field map for a struct type ahead of time, so the
+// warm builds and caches the field map for a struct type ahead of time, so the
 // reflection walk is paid once at startup rather than on the first request.
 // Non-struct types are ignored.
-func (d *Decoder) Warm(typ reflect.Type) {
+func (d *decoder) warm(typ reflect.Type) {
 	for typ != nil && typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
@@ -63,18 +63,18 @@ func (d *Decoder) Warm(typ reflect.Type) {
 	d.fieldsFor(typ)
 }
 
-// Decode populates dst (a pointer to a struct) from src. Keys are matched
+// decode populates dst (a pointer to a struct) from src. Keys are matched
 // case-sensitively; dotted keys (e.g. "addr.city") address nested struct
 // fields.
-func (d *Decoder) Decode(dst any, src map[string][]string) error {
+func (d *decoder) decode(dst any, src map[string][]string) error {
 	rv := reflect.ValueOf(dst)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
-		return fmt.Errorf("thx: Decode expects a non-nil pointer to a struct, got %T", dst)
+		return fmt.Errorf("thx: decode expects a non-nil pointer to a struct, got %T", dst)
 	}
 
 	root := rv.Elem()
 	if root.Kind() != reflect.Struct {
-		return fmt.Errorf("thx: Decode expects a pointer to a struct, got pointer to %s", root.Kind())
+		return fmt.Errorf("thx: decode expects a pointer to a struct, got pointer to %s", root.Kind())
 	}
 
 	fields := d.fieldsFor(root.Type())
@@ -98,7 +98,7 @@ func (d *Decoder) Decode(dst any, src map[string][]string) error {
 
 // setField assigns values to a field according to its type, handling slices
 // (one element per value) and scalars (last value wins).
-func (d *Decoder) setField(target reflect.Value, typ reflect.Type, values []string) error {
+func (d *decoder) setField(target reflect.Value, typ reflect.Type, values []string) error {
 	if len(values) == 0 {
 		return nil
 	}
@@ -120,7 +120,7 @@ func (d *Decoder) setField(target reflect.Value, typ reflect.Type, values []stri
 
 // setScalar converts a single raw string into target, following pointers and
 // consulting registered converters and encoding.TextUnmarshaler.
-func (d *Decoder) setScalar(target reflect.Value, typ reflect.Type, raw string) error {
+func (d *decoder) setScalar(target reflect.Value, typ reflect.Type, raw string) error {
 	if conv, ok := d.converters[typ]; ok {
 		out := conv(raw)
 		if !out.IsValid() {
@@ -186,7 +186,7 @@ func (d *Decoder) setScalar(target reflect.Value, typ reflect.Type, raw string) 
 
 // fieldsFor returns the cached flat field map for a struct type, building it on
 // the first request.
-func (d *Decoder) fieldsFor(typ reflect.Type) map[string]field {
+func (d *decoder) fieldsFor(typ reflect.Type) map[string]field {
 	if cached, ok := d.cache.Load(typ); ok {
 		return cached.(map[string]field)
 	}
@@ -198,7 +198,7 @@ func (d *Decoder) fieldsFor(typ reflect.Type) map[string]field {
 
 // buildFields walks a struct type into a flat map of dotted key -> leaf field,
 // flattening embedded structs and descending into nested structs.
-func (d *Decoder) buildFields(typ reflect.Type, indexPrefix []int, keyPrefix string, out map[string]field) {
+func (d *decoder) buildFields(typ reflect.Type, indexPrefix []int, keyPrefix string, out map[string]field) {
 	for i := range typ.NumField() {
 		sf := typ.Field(i)
 
@@ -245,7 +245,7 @@ func (d *Decoder) buildFields(typ reflect.Type, indexPrefix []int, keyPrefix str
 // isLeaf reports whether a struct type should be decoded from a single value
 // rather than descended into: it has a registered converter or implements
 // encoding.TextUnmarshaler.
-func (d *Decoder) isLeaf(typ reflect.Type) bool {
+func (d *decoder) isLeaf(typ reflect.Type) bool {
 	if _, ok := d.converters[typ]; ok {
 		return true
 	}
