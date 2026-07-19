@@ -19,7 +19,7 @@ func New() *Controller {
 }
 
 type userQuery struct {
-	Tab string `schema:"tab"`
+	Tab string `thx:"tab"`
 }
 
 func (c *Controller) Routes() thx.Routes {

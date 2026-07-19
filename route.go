@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	urlpath "path"
+	"reflect"
 	"runtime/debug"
 	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/go-thx/thx/internal"
-	"github.com/gorilla/schema"
 )
 
 // handlePanic recovers from panics during request handling, logs the
@@ -55,12 +55,12 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 
 var (
 	queryDecoder = newQueryDecoder()
-	formDecoder  = schema.NewDecoder()
+	formDecoder  = NewDecoder()
 )
 
-// newQueryDecoder creates a schema decoder configured to ignore unknown query keys.
-func newQueryDecoder() *schema.Decoder {
-	d := schema.NewDecoder()
+// newQueryDecoder creates a decoder configured to ignore unknown query keys.
+func newQueryDecoder() *Decoder {
+	d := NewDecoder()
 	d.IgnoreUnknownKeys(true)
 	return d
 }
@@ -199,6 +199,11 @@ func writeResult(res http.ResponseWriter, result Result) {
 // HTMX partial rendering, layout application, and panic recovery.
 func (r *route[Q, I]) Apply(router *Router) {
 	path := routePath(router.path, r.path)
+
+	queryDecoder.Warm(reflect.TypeFor[Q]())
+	if r.getHandler == nil {
+		formDecoder.Warm(reflect.TypeFor[I]())
+	}
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
 		defer handlePanic(path, router, res, req)

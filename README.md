@@ -94,7 +94,7 @@ func main() {
 }
 
 type greetForm struct {
-    Name string `schema:"name"`
+    Name string `thx:"name"`
 }
 
 func getIndex(ctx thx.Context, _ struct{}) thx.Result {
@@ -202,8 +202,8 @@ import "github.com/go-playground/validator/v10"
 var validate = validator.New(validator.WithRequiredStructEnabled())
 
 type registerForm struct {
-    Email    string `schema:"email"    validate:"required,email"`
-    Password string `schema:"password" validate:"required,min=8"`
+    Email    string `thx:"email"    validate:"required,email"`
+    Password string `thx:"password" validate:"required,min=8"`
 }
 ```
 

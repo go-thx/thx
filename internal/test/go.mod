@@ -12,7 +12,7 @@ tool (
 )
 
 require (
-	github.com/a-h/templ v0.3.1001
+	github.com/a-h/templ v0.3.1020
 	github.com/go-thx/thx v0.0.0
 	golang.org/x/sync v0.20.0
 )
@@ -37,7 +37,6 @@ require (
 	github.com/gohugoio/hugo v0.149.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/jsonschema-go v0.3.0 // indirect
-	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
