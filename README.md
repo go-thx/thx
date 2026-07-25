@@ -190,6 +190,44 @@ This works because the handler runs first, sets context values, then returns a `
 
 For HTMX partial requests, layouts are skipped entirely, so this is purely a full-page concern — partials don't need it.
 
+### Form and query binding
+
+The `I` and `Q` type parameters are filled by thx's built-in decoder. Fields are matched by their `thx` tag (falling back to the Go field name), and `thx:"-"` skips a field. Keys are dotted paths, so repeatable form rows and dynamic key sets bind directly:
+
+```go
+type orderForm struct {
+    Customer struct {
+        Name string `thx:"name"`
+    } `thx:"customer"`
+
+    Items []struct {
+        SKU string `thx:"sku"`
+        Qty int    `thx:"qty"`
+    } `thx:"items"`
+
+    Tags  []string          `thx:"tags"`
+    Attrs map[string]string `thx:"attrs"`
+}
+```
+
+```html
+<input name="customer.name" value="Marc">
+<input name="items.0.sku" value="A-1"><input name="items.0.qty" value="2">
+<input name="items.1.sku" value="B-7"><input name="items.1.qty" value="1">
+<input name="tags" value="rush"><input name="tags" value="gift">
+<input name="attrs.color" value="red">
+```
+
+Indices may arrive in any order and may be sparse — missing elements stay zero. Slices also accept repeated keys without an index (`tags` twice above), scalars take the last value. Supported leaf types are strings, bools, ints, uints, floats, `[]byte`, pointers to those, and anything implementing `encoding.TextUnmarshaler`.
+
+Two browser realities are handled for you: a checked checkbox submits `on`, which decodes to `true`, and an untouched number, date, or select input submits an empty string, which leaves the field at its zero value instead of failing. For a `*string` the empty string is kept as a value, since blank and absent differ there.
+
+Unknown keys are ignored in query strings but rejected in form bodies, and indices are capped (1000) along with key depth (32) so a client cannot force a large allocation.
+
+Decode failures are a `*thx.DecodeError` with a `Kind` — `thx.ErrUnknownKey`, `thx.ErrMalformedValue`, `thx.ErrLimitExceeded`, or `thx.ErrInvalidTarget` — and the offending `Key`. The kind separates a bad request from a bad handler: the first three answer `400`, while `ErrInvalidTarget` (the `I` or `Q` struct itself cannot be decoded into) answers `500`, since no request can fix it. Every failure is logged with its kind and key before the error page renders, and both `errors.Is(err, thx.ErrMalformedValue)` and `errors.As(err, &decErr)` work on it.
+
+Decoding only fills the struct — validation stays in the handler, see the next section.
+
 ### Form validation with field-level errors
 
 thx decodes form data into your `I` struct automatically but leaves validation to the handler. This gives you full control over how errors are presented — especially important for HTMX form submissions where you want to re-render the form with inline errors.
@@ -470,3 +508,11 @@ A templ component library wrapping DaisyUI 5, distributed via a CLI that copies 
 Explores bringing Rust's axum pattern to Go: handler functions declare their needs through parameter types (each implementing an `Extractor` interface), and the framework automatically parses requests and serializes responses. Part 2 optimizes this by packing extractors into a struct and using `unsafe.Pointer` field offsets to avoid per-request reflection.
 
 The pattern is powerful for general-purpose REST APIs with many diverse input sources, but requires reflection or unsafe code to inspect handler signatures at runtime. **thx** takes a different approach: fixed generic type parameters `[Q, I, O]` (query, input, output) give fully type-safe extraction at compile time with zero reflection — a simpler trade-off that fits the narrow templ+htmx domain well.
+
+### [gorilla/schema](https://github.com/gorilla/schema)
+
+The de-facto standard for filling Go structs from `url.Values`. Matches keys via a configurable alias tag, descends into nested structs and slices with dotted and indexed keys (`user.addr.city`, `items.0.name`), supports `map` fields, per-type converters, `IgnoreUnknownKeys`, `ZeroEmpty` for blank inputs, and aggregates every failure into a `MultiError` keyed by field path instead of stopping at the first one. **thx** has a built-in decoder in the same spirit — the `thx` struct tag, dotted keys for nested structs, registered converters, `encoding.TextUnmarshaler` support, and a type-keyed field cache warmed at route registration so no per-request type walk happens. Dotted and indexed keys, `map` fields, and blank-input-means-zero (gorilla's `ZeroEmpty`) are all present. It deliberately stays smaller: no dependency, and one error at a time rather than a `MultiError` — validation and field-level error reporting are the handler's job in thx, so aggregating decode errors would duplicate it. Unknown keys are fatal for form bodies but ignored for query strings, which matches how the two are actually used.
+
+### [ajg/form](https://github.com/ajg/form)
+
+An encoder *and* decoder for `application/x-www-form-urlencoded`, shaped like `encoding/json`. Flattens arbitrarily nested maps, slices, arrays, and structs into dot-delimited paths, with the delimiter and escape character configurable (`DelimitWith`, `EscapeWith`) so literal dots in keys round-trip. Handles `time.Time`, `url.URL`, `math/big`, and `image/color` as leaf values, falls back to `json` tags, supports `omitempty`, `IgnoreCase`, and a `KeysWith` hook to rewrite field names (e.g. to snake_case). Notable for treating untrusted input as untrusted: `MaxSize`, `MaxDepth`, and `MaxBytes` bound allocation, and failures come back as a typed `*form.Error` classifying parse errors, unknown keys, and limit violations. **thx** takes the decode-only half — it never needs to encode, since templ renders the HTML. It adopted four ideas from this project: indexed keys for repeatable form rows (`items.0.name`), `map` fields for dynamic key sets, bounded indices and key depth so those two cannot be turned into an allocation attack, and errors classified by kind so a malformed request can be told apart from an undecodable target struct. The encoder, complex numbers, colors, `math/big`, and configurable delimiters are outside what an htmx form submission needs.

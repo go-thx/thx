@@ -65,9 +65,27 @@ func newQueryDecoder() *decoder {
 	return d
 }
 
-// handleBadRequest writes a 400 status and delegates to the router's error handler.
+// handleBadRequest reports a failed request decode and delegates to the
+// router's error handler. A malformed request is the client's fault (400), an
+// undecodable target struct is the handler's (500).
 func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
-	res.WriteHeader(http.StatusBadRequest)
+	status := http.StatusBadRequest
+	if errors.Is(err, ErrInvalidTarget) {
+		status = http.StatusInternalServerError
+	}
+
+	var decErr *DecodeError
+	if errors.As(err, &decErr) {
+		slog.WarnContext(req.Context(), "Failed to decode request.",
+			"path", req.URL.Path,
+			"kind", string(decErr.Kind),
+			"key", decErr.Key,
+			"status", status,
+			"error", err,
+		)
+	}
+
+	res.WriteHeader(status)
 
 	if router.errorHandler != nil {
 		ctx := internal.NewContext(req, res)
