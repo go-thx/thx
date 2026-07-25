@@ -364,6 +364,48 @@ Each page button swaps the entire table/list container:
 
 Use thx's typed query params to decode the page number. The response includes the list and updated pagination controls.
 
+### Caching
+
+thx offers three caching primitives, all with a TTL. Store the returned closure in a package-level variable so the cache persists across requests.
+
+**`Cached`** and **`CachedByKey`** memoize a `templ.Component`. The component is built once (per key) and re-rendered with the live request context on every request, so `ViewContext` and layouts still work. Use them when the expensive part is *building* the component from already-available data:
+
+```go
+var sidebar = thx.Cached(5*time.Minute, func() templ.Component {
+    return sidebarView(loadNavItems())
+})
+
+var userCard = thx.CachedByKey[string](time.Minute, func(userID string) templ.Component {
+    return userCardView(loadUser(userID))
+})
+
+func (c *Controller) getPage(ctx thx.Context, _ struct{}) thx.Result {
+    return thx.Render(ctx, sidebar())        // wrapped in layouts as usual
+}
+```
+
+**`CachedPartial`** caches the *rendered bytes* of a partial, keyed by a request-derived key (e.g. locale). Unlike the two above, its factory receives the request `context.Context` — so it can load data with the live context on a miss — and may return an `error`, which is surfaced to the caller (HTTP 500) and never cached. Because it caches output rather than a component, consumers that bind their locale at view-context construction stay correct as long as the key includes the locale. Reach for it when the miss-time work is request-scoped or can fail (e.g. a live external API call):
+
+```go
+var greeting = thx.CachedPartial(time.Minute,
+    func(ctx context.Context) string { return view.Lang(ctx) },   // cache key
+    func(ctx context.Context) (templ.Component, error) {
+        data, err := api.FetchGreeting(ctx)
+        if err != nil {
+            return nil, err
+        }
+        return greetingView(data), nil
+    },
+    thx.WithCacheControl(),                                        // optional
+)
+
+func (c *Controller) getGreeting(ctx thx.Context, _ struct{}) thx.Result {
+    return greeting(ctx)                                          // returns a Result directly
+}
+```
+
+`CachedPartial` renders without layouts (like `Partial`). On a miss or once an entry is stale it re-renders synchronously, single-flighted so a burst of callers triggers one render they all share. If a re-render fails while stale bytes are still held, the stale bytes are served (availability over freshness). `WithCacheControl()` adds `Cache-Control: private, max-age=<ttl>` so clients cache the fragment for the same duration.
+
 ### Flash messages and toast notifications
 
 There are three patterns depending on the context. Use the right one for each situation.
