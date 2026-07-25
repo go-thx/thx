@@ -91,6 +91,7 @@ func (r *renderResult) WriteResult(res http.ResponseWriter) error {
 	if layouts, ok := r.ctx.Value(layoutsKey{}).([]Layout); ok {
 		comp = applyLayouts(r.ctx, comp, layouts)
 	}
+	res.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if r.status > 0 {
 		res.WriteHeader(r.status)
 	}

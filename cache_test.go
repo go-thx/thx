@@ -34,9 +34,9 @@ func writeBody(t *testing.T, r Result) string {
 	return rec.Body.String()
 }
 
-func TestCachedRenderHitSkipsFactory(t *testing.T) {
+func TestCachedPartialHitSkipsFactory(t *testing.T) {
 	var calls int32
-	render := CachedRender(time.Minute,
+	render := CachedPartial(time.Minute,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) {
 			atomic.AddInt32(&calls, 1)
@@ -56,9 +56,9 @@ func TestCachedRenderHitSkipsFactory(t *testing.T) {
 	}
 }
 
-func TestCachedRenderSingleFlight(t *testing.T) {
+func TestCachedPartialSingleFlight(t *testing.T) {
 	var calls int32
-	render := CachedRender(time.Minute,
+	render := CachedPartial(time.Minute,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) {
 			atomic.AddInt32(&calls, 1)
@@ -83,10 +83,10 @@ func TestCachedRenderSingleFlight(t *testing.T) {
 	}
 }
 
-func TestCachedRenderDistinctKeys(t *testing.T) {
+func TestCachedPartialDistinctKeys(t *testing.T) {
 	var calls int32
 	lang := "en"
-	render := CachedRender(time.Minute,
+	render := CachedPartial(time.Minute,
 		func(context.Context) string { return lang },
 		func(context.Context) (templ.Component, error) {
 			atomic.AddInt32(&calls, 1)
@@ -112,31 +112,71 @@ func TestCachedRenderDistinctKeys(t *testing.T) {
 	}
 }
 
-func TestCachedRenderExpiry(t *testing.T) {
-	var calls int32
-	render := CachedRender(20*time.Millisecond,
+func TestCachedPartialStaleReRenders(t *testing.T) {
+	var calls atomic.Int32
+	out := "v1"
+	render := CachedPartial(20*time.Millisecond,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) {
-			atomic.AddInt32(&calls, 1)
-			return comp("x"), nil
+			calls.Add(1)
+			return comp(out), nil
 		},
 	)
 
 	ctx := testContext()
-	render(ctx)
-	time.Sleep(40 * time.Millisecond)
-	render(ctx)
 
-	if calls != 2 {
-		t.Fatalf("factory called %d times, want 2 after expiry", calls)
+	if got := writeBody(t, render(ctx)); got != "v1" {
+		t.Fatalf("cold body: %q", got)
+	}
+
+	out = "v2"
+	time.Sleep(40 * time.Millisecond) // let the entry go stale
+
+	// Stale read blocks and re-renders synchronously to v2.
+	if got := writeBody(t, render(ctx)); got != "v2" {
+		t.Fatalf("stale body: %q, want v2 (re-rendered)", got)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("factory called %d times, want 2", calls.Load())
 	}
 }
 
-func TestCachedRenderErrorNotCached(t *testing.T) {
+func TestCachedPartialStaleServedOnError(t *testing.T) {
+	var calls atomic.Int32
+	fail := false
+	render := CachedPartial(20*time.Millisecond,
+		func(context.Context) string { return "k" },
+		func(context.Context) (templ.Component, error) {
+			calls.Add(1)
+			if fail {
+				return nil, errors.New("boom")
+			}
+			return comp("v1"), nil
+		},
+	)
+
+	ctx := testContext()
+	if got := writeBody(t, render(ctx)); got != "v1" {
+		t.Fatalf("cold body: %q", got)
+	}
+
+	fail = true
+	time.Sleep(40 * time.Millisecond)
+
+	// Stale re-render fails, so the held stale bytes are served instead of 500.
+	if got := writeBody(t, render(ctx)); got != "v1" {
+		t.Fatalf("body on failed re-render: %q, want v1 (stale served)", got)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("factory called %d times, want 2 (re-render attempted)", calls.Load())
+	}
+}
+
+func TestCachedPartialErrorNotCached(t *testing.T) {
 	var calls int32
 	fail := true
 	boom := errors.New("boom")
-	render := CachedRender(time.Minute,
+	render := CachedPartial(time.Minute,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) {
 			atomic.AddInt32(&calls, 1)
@@ -164,8 +204,8 @@ func TestCachedRenderErrorNotCached(t *testing.T) {
 	}
 }
 
-func TestCachedRenderCacheControl(t *testing.T) {
-	render := CachedRender(90*time.Second,
+func TestCachedPartialCacheControl(t *testing.T) {
+	render := CachedPartial(90*time.Second,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) { return comp("x"), nil },
 		WithCacheControl(),
@@ -178,10 +218,13 @@ func TestCachedRenderCacheControl(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "private, max-age=90" {
 		t.Fatalf("Cache-Control: %q", got)
 	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type: %q", got)
+	}
 }
 
-func TestCachedRenderNoCacheControlByDefault(t *testing.T) {
-	render := CachedRender(time.Minute,
+func TestCachedPartialNoCacheControlByDefault(t *testing.T) {
+	render := CachedPartial(time.Minute,
 		func(context.Context) string { return "k" },
 		func(context.Context) (templ.Component, error) { return comp("x"), nil },
 	)

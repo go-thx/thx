@@ -105,14 +105,14 @@ type cacheEntry struct {
 	expires time.Time
 }
 
-// CachedOption configures CachedRender.
+// CachedOption configures CachedPartial.
 type CachedOption func(*cachedConfig)
 
 type cachedConfig struct {
 	cacheControl bool
 }
 
-// WithCacheControl makes CachedRender emit a
+// WithCacheControl makes CachedPartial emit a
 // "Cache-Control: private, max-age=<ttl>" response header, letting the client
 // cache the fragment for the same duration the server does.
 func WithCacheControl() CachedOption {
@@ -121,7 +121,7 @@ func WithCacheControl() CachedOption {
 	}
 }
 
-// CachedRender caches the rendered bytes of a partial, keyed by a
+// CachedPartial caches the rendered bytes of a partial, keyed by a
 // request-derived key (e.g. locale), and refreshes them every ttl.
 //
 // Unlike Cached, the factory receives the request context, so it can load
@@ -131,12 +131,15 @@ func WithCacheControl() CachedOption {
 // locale at view-context construction stay correct as long as the key includes
 // the locale.
 //
-// On a miss, concurrent callers for the same key are single-flighted: the
-// factory runs once and the rendered bytes are shared with the waiters. The
-// component is rendered without layouts, like Partial. Expired entries are
-// evicted on access.
+// A cache hit within ttl serves the cached bytes directly. On a miss or once
+// an entry is stale, the factory is re-rendered synchronously, single-flighted
+// across concurrent callers so a burst triggers one render they all share. If a
+// re-render fails but stale bytes are still held, the stale bytes are served
+// (availability over freshness); a cold render error is surfaced to the caller
+// (HTTP 500) and never cached. The component is rendered without layouts, like
+// Partial.
 //
-//	var greeting = thx.CachedRender(time.Minute,
+//	var greeting = thx.CachedPartial(time.Minute,
 //	    func(ctx context.Context) string { return view.Lang(ctx) },
 //	    func(ctx context.Context) (templ.Component, error) {
 //	        data, err := api.FetchGreeting(ctx)
@@ -152,7 +155,7 @@ func WithCacheControl() CachedOption {
 //	func (c *Controller) getGreeting(ctx thx.Context, _ struct{}) thx.Result {
 //	    return greeting(ctx)
 //	}
-func CachedRender(
+func CachedPartial(
 	ttl time.Duration,
 	keyFn func(context.Context) string,
 	factory func(context.Context) (templ.Component, error),
@@ -179,29 +182,26 @@ func CachedRender(
 		key := keyFn(ctx)
 
 		mu.RLock()
-		if e, ok := entries[key]; ok && time.Now().Before(e.expires) {
-			body := e.body
-			mu.RUnlock()
-			return newResult(body)
-		}
+		stale, ok := entries[key]
 		mu.RUnlock()
+		if ok && time.Now().Before(stale.expires) {
+			return newResult(stale.body)
+		}
 
+		// Miss or stale: re-render once, single-flighted.
 		body, err, _ := group.Do(key, func() (any, error) {
-			// A prior flight for this key may have populated the cache while
-			// this call was waiting to enter the group.
+			// Another flight may have refreshed the entry while we waited.
 			mu.RLock()
-			if e, ok := entries[key]; ok && time.Now().Before(e.expires) {
-				body := e.body
-				mu.RUnlock()
-				return body, nil
-			}
+			e, ok := entries[key]
 			mu.RUnlock()
+			if ok && time.Now().Before(e.expires) {
+				return e.body, nil
+			}
 
 			comp, err := factory(ctx)
 			if err != nil {
 				return nil, err
 			}
-
 			var buf bytes.Buffer
 			if err := comp.Render(ctx, &buf); err != nil {
 				return nil, err
@@ -211,10 +211,13 @@ func CachedRender(
 			mu.Lock()
 			entries[key] = &renderedEntry{body: body, expires: time.Now().Add(ttl)}
 			mu.Unlock()
-
 			return body, nil
 		})
 		if err != nil {
+			// Keep serving stale bytes if we have them; nothing is cached.
+			if ok {
+				return newResult(stale.body)
+			}
 			return &errorResult{err: err}
 		}
 
@@ -222,7 +225,9 @@ func CachedRender(
 	}
 }
 
-// renderedEntry holds cached rendered bytes and their expiration time.
+// renderedEntry holds cached rendered bytes and their expiration time. Its
+// fields are never mutated after publication, so readers may use them after
+// releasing the lock.
 type renderedEntry struct {
 	body    []byte
 	expires time.Time
@@ -236,8 +241,9 @@ type cachedRenderResult struct {
 	maxAge       int
 }
 
-// WriteResult writes the cached bytes, setting Cache-Control first if enabled.
+// WriteResult writes the cached bytes, setting headers first.
 func (r *cachedRenderResult) WriteResult(res http.ResponseWriter) error {
+	res.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if r.cacheControl {
 		res.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(r.maxAge))
 	}
