@@ -91,11 +91,20 @@ func (r *renderResult) WriteResult(res http.ResponseWriter) error {
 	if layouts, ok := r.ctx.Value(layoutsKey{}).([]Layout); ok {
 		comp = applyLayouts(r.ctx, comp, layouts)
 	}
+	flashSwap, hasFlash := consumeFlashOOB(r.ctx)
+
 	res.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if r.status > 0 {
 		res.WriteHeader(r.status)
 	}
-	return comp.Render(r.ctx, res)
+	if err := comp.Render(r.ctx, res); err != nil {
+		return err
+	}
+
+	if !hasFlash {
+		return nil
+	}
+	return renderOOBSwap(r.ctx, res, flashSwap)
 }
 
 // jsonResult serializes data as JSON.

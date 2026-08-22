@@ -51,6 +51,8 @@ func (r *oobResult) WriteResult(res http.ResponseWriter) error {
 	if layouts, ok := r.ctx.Value(layoutsKey{}).([]Layout); ok {
 		comp = applyLayouts(r.ctx, comp, layouts)
 	}
+	flashSwap, hasFlash := consumeFlashOOB(r.ctx)
+
 	if r.status > 0 {
 		res.WriteHeader(r.status)
 	}
@@ -69,7 +71,11 @@ func (r *oobResult) WriteResult(res http.ResponseWriter) error {
 		}
 	}
 
-	return nil
+	if !hasFlash {
+		return nil
+	}
+
+	return renderOOBSwap(r.ctx, res, flashSwap)
 }
 
 // renderOOBSwap renders a single OOB swap as an hx-swap-oob template element.

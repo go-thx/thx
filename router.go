@@ -19,6 +19,7 @@ type Router struct {
 
 	path            string
 	layouts         []Layout
+	flashOOB        *flashOOBConfig
 	middleware      func(http.Handler) http.Handler
 	errorHandler    func(Context, http.ResponseWriter, *http.Request, error)
 	notFoundHandler func(http.ResponseWriter, *http.Request)

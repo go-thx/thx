@@ -243,6 +243,9 @@ func (r *route[Q, I]) Apply(router *Router) {
 
 		ctx := internal.NewContext(req, res)
 		ctx.SetValue(layoutsKey{}, router.layouts)
+		if router.flashOOB != nil {
+			ctx.SetValue(flashOOBKey{}, router.flashOOB)
+		}
 
 		htmx := ctx.HTMX()
 		if htmx.IsRequest() {
@@ -324,6 +327,7 @@ func WithPath(path string, routes ...Route) Routes {
 		subRouter := &Router{
 			Mux:          subMux,
 			layouts:      r.layouts,
+			flashOOB:     r.flashOOB,
 			errorHandler: r.errorHandler,
 		}
 
@@ -385,6 +389,7 @@ func WithLayout(layout Layout, routes ...Route) Routes {
 			Mux:             r.Mux,
 			path:            r.path,
 			layouts:         append([]Layout{layout}, r.layouts...),
+			flashOOB:        r.flashOOB,
 			errorHandler:    r.errorHandler,
 			notFoundHandler: r.notFoundHandler,
 			middleware:       r.middleware,

@@ -174,8 +174,8 @@ func CachedPartial(
 		group   singleflight.Group
 	)
 
-	newResult := func(body []byte) Result {
-		return &cachedRenderResult{body: body, cacheControl: cfg.cacheControl, maxAge: maxAge}
+	newResult := func(ctx Context, body []byte) Result {
+		return &cachedRenderResult{ctx: ctx, body: body, cacheControl: cfg.cacheControl, maxAge: maxAge}
 	}
 
 	return func(ctx Context) Result {
@@ -185,7 +185,7 @@ func CachedPartial(
 		stale, ok := entries[key]
 		mu.RUnlock()
 		if ok && time.Now().Before(stale.expires) {
-			return newResult(stale.body)
+			return newResult(ctx, stale.body)
 		}
 
 		// Miss or stale: re-render once, single-flighted.
@@ -216,12 +216,12 @@ func CachedPartial(
 		if err != nil {
 			// Keep serving stale bytes if we have them; nothing is cached.
 			if ok {
-				return newResult(stale.body)
+				return newResult(ctx, stale.body)
 			}
 			return &errorResult{err: err}
 		}
 
-		return newResult(body.([]byte))
+		return newResult(ctx, body.([]byte))
 	}
 }
 
@@ -236,19 +236,36 @@ type renderedEntry struct {
 // cachedRenderResult writes pre-rendered bytes, optionally with a
 // Cache-Control header.
 type cachedRenderResult struct {
+	ctx          Context
 	body         []byte
 	cacheControl bool
 	maxAge       int
 }
 
-// WriteResult writes the cached bytes, setting headers first.
+// WriteResult writes the cached bytes, setting headers first. Flash messages
+// are appended out-of-band unless the response is client-cacheable — a
+// one-time message must not be replayed from the browser cache.
 func (r *cachedRenderResult) WriteResult(res http.ResponseWriter) error {
+	var (
+		flashSwap OOBSwap
+		hasFlash  bool
+	)
+	if !r.cacheControl {
+		flashSwap, hasFlash = consumeFlashOOB(r.ctx)
+	}
+
 	res.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if r.cacheControl {
 		res.Header().Set("Cache-Control", "private, max-age="+strconv.Itoa(r.maxAge))
 	}
-	_, err := res.Write(r.body)
-	return err
+	if _, err := res.Write(r.body); err != nil {
+		return err
+	}
+
+	if !hasFlash {
+		return nil
+	}
+	return renderOOBSwap(r.ctx, res, flashSwap)
 }
 
 // errorResult surfaces a handler error through the router's writeResult path,
