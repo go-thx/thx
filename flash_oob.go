@@ -65,8 +65,11 @@ func consumeFlashOOB(ctx Context) (OOBSwap, bool) {
 		return OOBSwap{}, false
 	}
 
+	// Only partial requests: a boosted or history-restore response replaces
+	// the whole body, wiping the element the OOB swap just wrote into. Those
+	// render with layouts, so the layout's own Flashes call shows them.
 	hx := ctx.HTMX()
-	if !hx.IsRequest() || hx.IsHistoryRestoreRequest() {
+	if !hx.IsRequest() || !hx.IsPartial() || hx.IsHistoryRestoreRequest() {
 		return OOBSwap{}, false
 	}
 

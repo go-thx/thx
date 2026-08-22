@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/a-h/templ"
 )
@@ -19,6 +20,15 @@ func flashRenderer(flashes []FlashMessage) templ.Component {
 		parts = append(parts, f.Level+":"+f.Message)
 	}
 	return comp("<li>" + strings.Join(parts, "|") + "</li>")
+}
+
+// partialRequest builds an HTMX partial request — the only kind that gets an
+// automatic flash OOB swap.
+func partialRequest() *http.Request {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Request-Type", "partial")
+	return req
 }
 
 func flashCookie(t *testing.T, flashes ...FlashMessage) *http.Cookie {
@@ -45,8 +55,7 @@ func flashRequest(t *testing.T, req *http.Request, handler func(Context, struct{
 }
 
 func TestFlashOOBAppendedToHTMXRender(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 	req.AddCookie(flashCookie(t, FlashMessage{Level: "success", Message: "Saved!"}))
 
 	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
@@ -64,8 +73,7 @@ func TestFlashOOBAppendedToHTMXRender(t *testing.T) {
 }
 
 func TestFlashOOBIncludesFlashesSetInHandler(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 
 	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
 		FlashError(ctx, "nope")
@@ -78,8 +86,7 @@ func TestFlashOOBIncludesFlashesSetInHandler(t *testing.T) {
 }
 
 func TestFlashOOBAppendedAfterExplicitSwaps(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
 
 	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
@@ -115,8 +122,7 @@ func TestFlashOOBSkippedForNonHTMXRequest(t *testing.T) {
 }
 
 func TestFlashOOBSkippedOnHistoryRestore(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 	req.Header.Set("HX-History-Restore-Request", "true")
 	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
 
@@ -130,8 +136,7 @@ func TestFlashOOBSkippedOnHistoryRestore(t *testing.T) {
 }
 
 func TestFlashOOBSkippedWithoutPendingFlashes(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 
 	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
 		return Render(ctx, comp("<main/>"))
@@ -143,8 +148,7 @@ func TestFlashOOBSkippedWithoutPendingFlashes(t *testing.T) {
 }
 
 func TestFlashOOBLeavesCookieOnRedirect(t *testing.T) {
-	req := httptest.NewRequest("GET", "/", nil)
-	req.Header.Set("HX-Request", "true")
+	req := partialRequest()
 
 	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
 		FlashSuccess(ctx, "Welcome back!")
@@ -160,9 +164,12 @@ func TestFlashOOBLeavesCookieOnRedirect(t *testing.T) {
 	}
 }
 
-func TestFlashOOBOwnsFlashesInsideLayout(t *testing.T) {
+// A boosted request renders a full page, so the layout keeps the flashes:
+// htmx would replace the swap target's contents right after applying it.
+func TestFlashOOBLeavesFlashesToLayoutOnFullPageRequest(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Header.Set("HX-Request", "true")
+	req.Header.Set("HX-Boosted", "true")
 	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
 
 	var inLayout []FlashMessage
@@ -182,10 +189,67 @@ func TestFlashOOBOwnsFlashesInsideLayout(t *testing.T) {
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
-	if inLayout != nil {
-		t.Fatalf("layout consumed flashes: %v", inLayout)
+	if len(inLayout) != 1 {
+		t.Fatalf("layout flashes = %v, want 1 message", inLayout)
 	}
-	if !strings.Contains(rec.Body.String(), "<li>info:hi</li>") {
-		t.Fatalf("flash OOB missing: %q", rec.Body.String())
+	if strings.Contains(rec.Body.String(), "hx-swap-oob") {
+		t.Fatalf("unexpected OOB swap: %q", rec.Body.String())
+	}
+}
+
+func TestFlashOOBOwnsFlashesInsidePartialRender(t *testing.T) {
+	req := partialRequest()
+	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
+
+	var inHandler []FlashMessage
+	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
+		result := Render(ctx, comp("<main/>"))
+		inHandler = Flashes(ctx)
+		return result
+	})
+
+	if inHandler == nil {
+		t.Fatal("handler read flashes before the swap consumed them, want the cookie value")
+	}
+	if strings.Contains(rec.Body.String(), "<li>info:hi</li>") {
+		t.Fatalf("flashes rendered twice: %q", rec.Body.String())
+	}
+}
+
+func TestFlashOOBAppendedToCachedPartial(t *testing.T) {
+	req := partialRequest()
+	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
+
+	cached := CachedPartial(time.Minute,
+		func(context.Context) string { return "k" },
+		func(context.Context) (templ.Component, error) { return comp("<main/>"), nil },
+	)
+
+	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
+		return cached(ctx)
+	})
+
+	want := `<main/><template hx-swap-oob="afterbegin:#flashes"><li>info:hi</li></template>`
+	if rec.Body.String() != want {
+		t.Fatalf("body = %q, want %q", rec.Body.String(), want)
+	}
+}
+
+func TestFlashOOBSkippedForClientCacheablePartial(t *testing.T) {
+	req := partialRequest()
+	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
+
+	cached := CachedPartial(time.Minute,
+		func(context.Context) string { return "k" },
+		func(context.Context) (templ.Component, error) { return comp("<main/>"), nil },
+		WithCacheControl(),
+	)
+
+	rec := flashRequest(t, req, func(ctx Context, _ struct{}) Result {
+		return cached(ctx)
+	})
+
+	if strings.Contains(rec.Body.String(), "hx-swap-oob") {
+		t.Fatalf("flash baked into a cacheable response: %q", rec.Body.String())
 	}
 }

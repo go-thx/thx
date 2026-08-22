@@ -481,7 +481,9 @@ func (c *Controller) postSettings(ctx thx.Context, _ struct{}, form settingsForm
 }
 ```
 
-Only HTMX requests are touched — history restores excluded, since HTMX ignores OOB swaps there. On those requests the OOB swap owns the flashes: they are consumed before the primary component renders, so a layout calling `Flashes` gets nil. Responses that are not rendered HTML — redirects, `JSON`, `Raw`, `Empty` — leave the cookie intact, so a flash set before `ctx.Redirect` still shows on the next page load. The swap is appended after any explicit `SwapOOB` swaps.
+Only HTMX *partial* requests are touched. Boosted and history-restore responses replace the whole body, which would wipe the element the swap just wrote into — those render with layouts, so the layout's own `Flashes` call displays them as on a normal page load. On partial requests the swap owns the flashes: they are consumed before the component renders, so `Flashes` returns nil afterwards. Responses that are not rendered HTML — redirects, `JSON`, `Raw`, `Empty` — leave the cookie intact, so a flash set before `ctx.Redirect` still shows on the next page load. `CachedPartial` results get the swap too, except with `WithCacheControl()`, where a one-time message must not end up in the browser cache. The swap is appended after any explicit `SwapOOB` swaps.
+
+Two caveats. Flashes are consumed before the body is written, so a component that fails mid-render loses them. And HTMX drops non-2xx responses unless `htmx.config.responseHandling` says otherwise — if you flash on a `Status(422).Render(...)` validation response, configure HTMX to swap it or use `HX-Trigger` instead.
 
 #### Full-page redirects: cookie-based flash
 
