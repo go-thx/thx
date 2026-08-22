@@ -453,6 +453,36 @@ func (c *Controller) postSomething(ctx thx.Context, _ struct{}, form myForm) thx
 
 Using `afterbegin` appends new toasts without clearing existing ones.
 
+#### HTMX requests: automatic flash OOB
+
+If every handler ends up repeating the same OOB swap, opt into `WithFlashOOB`. It appends pending flash messages to every rendered HTML response of the wrapped routes, so handlers only call `thx.Flash*`:
+
+```go
+thx.New(
+    thx.WithFlashOOB("#flashes", thx.SwapAfterBegin, toasts,
+        thx.Get("/dashboard", c.getDashboard),
+        thx.Post("/settings", c.postSettings),
+    ),
+)
+
+// toasts is yours — thx never dictates the container or the markup
+templ toasts(flashes []thx.FlashMessage) {
+    for _, f := range flashes {
+        @toast(f.Level, f.Message)
+    }
+}
+```
+
+```go
+func (c *Controller) postSettings(ctx thx.Context, _ struct{}, form settingsForm) thx.Result {
+    // ... do work ...
+    thx.FlashSuccess(ctx, "Saved!")
+    return thx.Render(ctx, updatedContent())
+}
+```
+
+Only HTMX requests are touched — history restores excluded, since HTMX ignores OOB swaps there. On those requests the OOB swap owns the flashes: they are consumed before the primary component renders, so a layout calling `Flashes` gets nil. Responses that are not rendered HTML — redirects, `JSON`, `Raw`, `Empty` — leave the cookie intact, so a flash set before `ctx.Redirect` still shows on the next page load. The swap is appended after any explicit `SwapOOB` swaps.
+
 #### Full-page redirects: cookie-based flash
 
 For redirects that leave the HTMX context (login, logout, initial navigation), use thx's cookie-based flash messages. These survive across the redirect and are consumed on the next page load.
@@ -517,15 +547,13 @@ func RequestID(next http.Handler) http.Handler {
 
 Wire it in with `thx.WithMiddleware(RequestID, ...)`.
 
-### Integrated OOB flash mechanism
+### Flash conventions by default
 
-thx does not auto-append flash messages as OOB fragments to responses. An integrated mechanism would accumulate flashes on the context, automatically render them as `<template hx-swap-oob="afterbegin:#flashes">` during `WriteResult`, and fall back to cookies for redirects. This was considered but not included because:
+Auto-appended flash OOB swaps are opt-in via `WithFlashOOB`, never on by default. The container selector, the swap strategy, and the markup all come from the application — thx supplies no toast component, no `#flashes` convention, and no client JS. Toast presentation varies wildly between apps (libraries, animations, positioning, stacking), so the framework only handles the plumbing: consume pending flashes, render the app's component, append it as an OOB template.
 
-- It requires a framework-managed DOM container (`#flashes`) and a registered toast renderer — coupling thx to specific HTML conventions.
-- The existing building blocks already cover every case: `ctx.HTMX().Trigger()` for HTMX requests (most common, ~5 lines of client JS), `thx.SwapOOB()` for fully server-rendered toasts, and `thx.Flash()` for redirects.
-- Toast presentation varies wildly between apps (libraries, animations, positioning, stacking). The framework shouldn't dictate this.
+Without the opt-in, the building blocks stand alone: `ctx.HTMX().Trigger()` for HTMX requests (~5 lines of client JS), `thx.SwapOOB()` for fully server-rendered toasts, and `thx.Flash()` for redirects.
 
-See [Flash messages and toast notifications](#flash-messages-and-toast-notifications) in the recipes section for the recommended patterns.
+See [Flash messages and toast notifications](#flash-messages-and-toast-notifications) in the recipes section for all patterns.
 
 ## References and inspiration
 
