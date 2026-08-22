@@ -84,6 +84,12 @@ func consumeFlashOOB(ctx Context) (OOBSwap, bool) {
 		return OOBSwap{}, false
 	}
 
+	// Consuming here, before the caller writes the body, is what makes the
+	// cookie delete possible — and what makes it lossy: if the primary
+	// component fails to render, the response turns into a 500 and these
+	// messages are gone, with no cookie left to retry from. Buffering every
+	// render to close that window is not worth it.
+	//
 	// When the handler called Flash on this request, its cookie write already
 	// sits in the response and the delete below lands after it — the browser
 	// applies both in order, so the cookie ends up gone. Deferring the write
