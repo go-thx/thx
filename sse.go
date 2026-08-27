@@ -42,7 +42,9 @@ func (r *sseRoute[Q]) Apply(router *Router) {
 	path := routePath(router.path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
-		defer handlePanic(path, router, res, req)
+		ctx := internal.NewContext(req, res)
+
+		defer handlePanic(ctx, path, router, res, req)
 
 		flusher, ok := res.(http.Flusher)
 		if !ok {
@@ -53,7 +55,7 @@ func (r *sseRoute[Q]) Apply(router *Router) {
 			return
 		}
 
-		queryData, ok := decodeQuery[Q](req, res, router)
+		queryData, ok := decodeQuery[Q](ctx, req, res, router)
 		if !ok {
 			return
 		}
@@ -63,8 +65,6 @@ func (r *sseRoute[Q]) Apply(router *Router) {
 		res.Header().Set("Connection", "keep-alive")
 		res.WriteHeader(http.StatusOK)
 		flusher.Flush()
-
-		ctx := internal.NewContext(req, res)
 
 		stream := &eventStream{
 			res:     res,

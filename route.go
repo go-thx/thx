@@ -19,7 +19,7 @@ import (
 // handlePanic recovers from panics during request handling, logs the
 // error with the stack trace, and invokes the router's error handler if set.
 // It re-panics on http.ErrAbortHandler to preserve hijack semantics.
-func handlePanic(path string, router *Router, res http.ResponseWriter, req *http.Request) {
+func handlePanic(ctx Context, path string, router *Router, res http.ResponseWriter, req *http.Request) {
 	reason := recover()
 	if reason == nil {
 		return
@@ -42,8 +42,6 @@ func handlePanic(path string, router *Router, res http.ResponseWriter, req *http
 	res.WriteHeader(http.StatusInternalServerError)
 
 	if router.errorHandler != nil {
-		ctx := internal.NewContext(req, res)
-
 		reasonErr, ok := reason.(error)
 		if !ok {
 			reasonErr = fmt.Errorf("panic: %v", reason)
@@ -68,7 +66,7 @@ func newQueryDecoder() *decoder {
 // handleBadRequest reports a failed request decode and delegates to the
 // router's error handler. A malformed request is the client's fault (400), an
 // undecodable target struct is the handler's (500).
-func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, router *Router) {
+func handleBadRequest(ctx Context, err error, req *http.Request, res http.ResponseWriter, router *Router) {
 	status := http.StatusBadRequest
 	if errors.Is(err, ErrInvalidTarget) {
 		status = http.StatusInternalServerError
@@ -88,14 +86,13 @@ func handleBadRequest(err error, req *http.Request, res http.ResponseWriter, rou
 	res.WriteHeader(status)
 
 	if router.errorHandler != nil {
-		ctx := internal.NewContext(req, res)
 		router.errorHandler(ctx, res, req, err)
 	}
 }
 
 // decodeQuery decodes URL query parameters into the typed struct Q.
 // For HTMX requests, it also merges query params from HX-Current-URL as a fallback.
-func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Router) (Q, bool) {
+func decodeQuery[Q any](ctx Context, req *http.Request, res http.ResponseWriter, router *Router) (Q, bool) {
 	var queryData Q
 
 	query := req.URL.Query()
@@ -115,7 +112,7 @@ func decodeQuery[Q any](req *http.Request, res http.ResponseWriter, router *Rout
 	}
 
 	if err := queryDecoder.decode(&queryData, query); err != nil {
-		handleBadRequest(err, req, res, router)
+		handleBadRequest(ctx, err, req, res, router)
 		return queryData, false
 	}
 
@@ -156,13 +153,13 @@ type route[Q, I any] struct {
 
 // decodeForm decodes the request body into the typed struct I.
 // Supports JSON, multipart form data, and URL-encoded form bodies.
-func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Router) (I, bool) {
+func decodeForm[I any](ctx Context, req *http.Request, res http.ResponseWriter, router *Router) (I, bool) {
 	var in I
 
 	ct := req.Header.Get("Content-Type")
 	if ct == "application/json" || strings.HasPrefix(ct, "application/json;") {
 		if err := json.NewDecoder(req.Body).Decode(&in); err != nil {
-			handleBadRequest(err, req, res, router)
+			handleBadRequest(ctx, err, req, res, router)
 			return in, false
 		}
 
@@ -171,18 +168,18 @@ func decodeForm[I any](req *http.Request, res http.ResponseWriter, router *Route
 
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		if err := req.ParseMultipartForm(32 << 20); err != nil {
-			handleBadRequest(err, req, res, router)
+			handleBadRequest(ctx, err, req, res, router)
 			return in, false
 		}
 	} else {
 		if err := req.ParseForm(); err != nil {
-			handleBadRequest(err, req, res, router)
+			handleBadRequest(ctx, err, req, res, router)
 			return in, false
 		}
 	}
 
 	if err := formDecoder.decode(&in, req.PostForm); err != nil {
-		handleBadRequest(err, req, res, router)
+		handleBadRequest(ctx, err, req, res, router)
 		return in, false
 	}
 
@@ -224,7 +221,16 @@ func (r *route[Q, I]) Apply(router *Router) {
 	}
 
 	router.Mux.HandleFunc(r.method+" "+path, func(res http.ResponseWriter, req *http.Request) {
-		defer handlePanic(path, router, res, req)
+		// One context per request: the decoders, the handler, and both error
+		// paths share it, so values set along the way (flash consumption, auth)
+		// stay visible to the error page.
+		ctx := internal.NewContext(req, res)
+		ctx.SetValue(layoutsKey{}, router.layouts)
+		if router.flashOOB != nil {
+			ctx.SetValue(flashOOBKey{}, router.flashOOB)
+		}
+
+		defer handlePanic(ctx, path, router, res, req)
 		defer func() {
 			if req.MultipartForm != nil {
 				if err := req.MultipartForm.RemoveAll(); err != nil {
@@ -236,15 +242,9 @@ func (r *route[Q, I]) Apply(router *Router) {
 			}
 		}()
 
-		queryData, ok := decodeQuery[Q](req, res, router)
+		queryData, ok := decodeQuery[Q](ctx, req, res, router)
 		if !ok {
 			return
-		}
-
-		ctx := internal.NewContext(req, res)
-		ctx.SetValue(layoutsKey{}, router.layouts)
-		if router.flashOOB != nil {
-			ctx.SetValue(flashOOBKey{}, router.flashOOB)
 		}
 
 		htmx := ctx.HTMX()
@@ -261,7 +261,7 @@ func (r *route[Q, I]) Apply(router *Router) {
 			return
 		}
 
-		in, ok := decodeForm[I](req, res, router)
+		in, ok := decodeForm[I](ctx, req, res, router)
 		if !ok {
 			return
 		}

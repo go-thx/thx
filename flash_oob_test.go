@@ -216,6 +216,34 @@ func TestFlashOOBOwnsFlashesInsidePartialRender(t *testing.T) {
 	}
 }
 
+// A panic after consumption must not resurrect the messages on the error
+// page: the response has already deleted the cookie they came from.
+func TestFlashOOBNotRepeatedOnErrorPage(t *testing.T) {
+	req := partialRequest()
+	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
+
+	var onErrorPage []FlashMessage
+	router := New(
+		HandleInternalError(func(ctx Context) templ.Component {
+			onErrorPage = Flashes(ctx)
+			return comp("<p>boom</p>")
+		}),
+		WithFlashOOB("#flashes", SwapAfterBegin, flashRenderer,
+			Get("/", func(ctx Context, _ struct{}) Result {
+				Flashes(ctx)
+				panic("boom")
+			}),
+		),
+	)
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if onErrorPage != nil {
+		t.Fatalf("error page re-read consumed flashes: %v", onErrorPage)
+	}
+}
+
 func TestFlashOOBAppendedToCachedPartial(t *testing.T) {
 	req := partialRequest()
 	req.AddCookie(flashCookie(t, FlashMessage{Level: "info", Message: "hi"}))
