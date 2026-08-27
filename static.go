@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/go-thx/thx/internal"
 )
 
 // Static serves static files from the given filesystem at the given URL prefix.
@@ -30,7 +32,7 @@ func (s *staticRoute) Apply(router *Router) {
 	}
 
 	router.Mux.Handle("GET "+pattern, http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
-		defer handlePanic(pattern, router, res, req)
+		defer handlePanic(internal.NewContext(req, res), pattern, router, res, req)
 
 		versioned := req.URL.Query().Has("v")
 		w := &staticResponseWriter{ResponseWriter: res, versioned: versioned}

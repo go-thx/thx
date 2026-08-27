@@ -43,9 +43,11 @@ func (r *wsRoute[Q]) Apply(router *Router) {
 	path := routePath(router.path, r.path)
 
 	router.Mux.HandleFunc("GET "+path, func(res http.ResponseWriter, req *http.Request) {
-		defer handlePanic(path, router, res, req)
+		ctx := internal.NewContext(req, res)
 
-		queryData, ok := decodeQuery[Q](req, res, router)
+		defer handlePanic(ctx, path, router, res, req)
+
+		queryData, ok := decodeQuery[Q](ctx, req, res, router)
 		if !ok {
 			return
 		}
@@ -59,8 +61,6 @@ func (r *wsRoute[Q]) Apply(router *Router) {
 			return
 		}
 		defer conn.CloseNow()
-
-		ctx := internal.NewContext(req, res)
 
 		wsConn := &WSConn{conn: conn}
 
