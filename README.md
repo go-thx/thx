@@ -35,7 +35,7 @@ thx handles all of that so your handlers stay focused on business logic:
 - **Automatic partial rendering** — HTMX requests skip layouts, boosted requests get full pages, `Vary` headers are set correctly
 - **Layout composition** — nest layouts declaratively with `WithLayout`, no manual wrapping
 - **HTMX integration** — full request/response header coverage via `ctx.HTMX()` with fluent swap and trigger builders
-- **Auth guards** — composable authorization rules on route groups and single routes, with 401/403 redirects
+- **Auth guards** — composable authorization rules on route groups and single routes, with 401/403 or redirect responses
 - **OOB swaps** — update multiple page sections in a single response with `SwapOOB`
 - **SSE and WebSocket** — first-class route types with HTMX 4.0 envelope support
 - **Result types** — explicit `Render`, `JSON`, `Raw`, `Status().Empty()` — no silent behavior

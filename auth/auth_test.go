@@ -203,7 +203,7 @@ func TestRouteRuleInheritsGuardDenialHandling(t *testing.T) {
 	}
 }
 
-func TestRouteRuleDeniesWithout403WhenAllowed(t *testing.T) {
+func TestRouteRuleAllowsWhenNoRules(t *testing.T) {
 	// A route without rules keeps working: All() over no rules allows.
 	handler := func(ctx Context[user], _ struct{}) thx.Result {
 		return thx.Raw("ok")
