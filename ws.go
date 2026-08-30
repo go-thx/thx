@@ -60,7 +60,7 @@ func (r *wsRoute[Q]) Apply(router *Router) {
 			)
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 
 		wsConn := &WSConn{conn: conn}
 

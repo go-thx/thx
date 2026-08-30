@@ -22,7 +22,7 @@ func LoadPackages(dir, pattern string) ([]*packages.Package, error) {
 			packages.NeedTypesInfo |
 			packages.NeedImports |
 			packages.NeedDeps,
-		Dir:       dir,
+		Dir: dir,
 		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
 			return parser.ParseFile(fset, filename, src, parser.ParseComments)
 		},

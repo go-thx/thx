@@ -191,7 +191,7 @@ func decodeForm[I any](ctx Context, req *http.Request, res http.ResponseWriter, 
 // the full page is always rendered to avoid restoring a bare fragment.
 func applyLayouts(ctx internal.Context, comp templ.Component, layouts []Layout) templ.Component {
 	hx := ctx.HTMX()
-	if ctx.IsWithoutLayouts() && !(hx.IsRequest() && hx.IsHistoryRestoreRequest()) {
+	if ctx.IsWithoutLayouts() && (!hx.IsRequest() || !hx.IsHistoryRestoreRequest()) {
 		return comp
 	}
 	for _, layout := range layouts {
@@ -345,7 +345,7 @@ func WithPath(path string, routes ...Route) Routes {
 		})
 
 		// Subtree: strip prefix then route via sub-mux
-		var subtreeHandler http.Handler = http.StripPrefix(prefix, inner)
+		subtreeHandler := http.StripPrefix(prefix, inner)
 
 		// Exact prefix: rewrite to "/" then route via sub-mux
 		var exactHandler http.Handler = http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
@@ -392,7 +392,7 @@ func WithLayout(layout Layout, routes ...Route) Routes {
 			flashOOB:        r.flashOOB,
 			errorHandler:    r.errorHandler,
 			notFoundHandler: r.notFoundHandler,
-			middleware:       r.middleware,
+			middleware:      r.middleware,
 		}
 
 		for _, route := range routes {
