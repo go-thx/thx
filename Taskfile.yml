@@ -7,6 +7,16 @@ tasks:
     cmds:
       - ln -s (which gopls) ~/.local/bin/gopls
 
+  lint:
+    desc: "Run the linter over the module."
+    cmds:
+      - golangci-lint run ./...
+
+  test:
+    desc: "Run the test suite with race detection."
+    cmds:
+      - go test -trimpath -buildvcs=false -failfast -count=1 -race ./...
+
   run:
     silent: true
     cmds:

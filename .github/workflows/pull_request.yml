@@ -1,0 +1,158 @@
+name: PR
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, synchronize, reopened]
+    paths:
+      - ".github/workflows/pull_request.yml"
+      - "**/*.go"
+      - "**/*.templ"
+      - ".golangci.yml"
+      - "mise.toml"
+      - "go.mod"
+      - "go.sum"
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Cache Go Modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-v1
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          install-mode: "none"
+          working-directory: .
+          args: --path-prefix=. --timeout 5m
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Cache Go Modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-v1
+
+      - name: Cache Go Build
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/go-build
+          key: go-build-v1
+
+      - name: Build
+        run: go build -v ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Cache Go Modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-v1
+
+      - name: Cache Go Build
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/go-build
+          key: go-build-v1
+
+      - name: Test
+        run: |
+          go test \
+          -coverprofile=coverage.txt -covermode=atomic \
+          -trimpath -buildvcs=false \
+          -failfast -count=1 -race -v ./...
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.txt
+
+  build-internal:
+    name: Build Internal
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Cache Go Modules
+        uses: actions/cache@v6
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-internal-v1
+
+      - name: Cache Go Build
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/go-build
+          key: go-build-internal-v1
+
+      - name: Install Internal Tools
+        working-directory: internal/test
+        run: mise install
+
+      - name: Generate
+        working-directory: internal/test
+        run: |
+          go tool thx generate routes -o gen/routes ./web/...
+          go tool templ generate
+
+      - name: Build
+        working-directory: internal/test
+        run: go build -v ./...

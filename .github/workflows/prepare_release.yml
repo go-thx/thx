@@ -1,0 +1,59 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validate version
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must match vX.Y.Z, got: ${{ inputs.version }}"
+            exit 1
+          fi
+
+      - name: Setup Mise
+        uses: jdx/mise-action@v4
+        with:
+          install: true
+          cache: true
+
+      - name: Generate CHANGELOG
+        run: mise exec -- git-cliff --config cliff.toml --tag ${{ inputs.version }} --output CHANGELOG.md
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: release/${{ inputs.version }}
+          base: main
+          title: "chore(release): prepare ${{ inputs.version }}"
+          commit-message: "chore(release): prepare ${{ inputs.version }}"
+          body: |
+            Automated release preparation for **${{ inputs.version }}**.
+
+            - `CHANGELOG.md` regenerated via [git-cliff](https://git-cliff.org)
+
+            Review the diff, merge, then tag `${{ inputs.version }}` on `main`.
+
+            > Note: PRs opened by `GITHUB_TOKEN` do not trigger CI. If a full CI run is needed, close and reopen this PR, or push an empty commit.
+          delete-branch: true
