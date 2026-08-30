@@ -37,6 +37,7 @@ tasks:
         cd internal/test
         && mkdir -p gen/assets
         && cp node_modules/htmx.org/dist/htmx.min.js gen/assets/htmx.min.js
+        && cp node_modules/htmx.org/dist/ext/hx-preload.min.js gen/assets/hx-preload.min.js
         && cp node_modules/htmx.org/dist/ext/hx-ws.min.js gen/assets/hx-ws.min.js
         && cp node_modules/htmx.org/dist/ext/hx-sse.min.js gen/assets/hx-sse.min.js
 
