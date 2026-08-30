@@ -25,7 +25,7 @@ type userQuery struct {
 func (c *Controller) Routes() thx.Routes {
 	return thx.WithLayout(layout,
 		thx.Get("/", thxauth.Get(c.getIndex)),
-		thx.Get("/users/{id}", thxauth.Get(c.getUser)),
+		thx.Get("/users/{id}", thxauth.Get(c.getUser, auth.OwnsUser)),
 		thx.SSE("/events", c.events),
 		thx.WS("/ws", c.ws),
 
