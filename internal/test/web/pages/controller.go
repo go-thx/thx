@@ -53,6 +53,7 @@ func (c *Controller) Routes() thx.Routes {
 
 				thxauth.WithGuard("/private",
 					c.private.Routes(),
+					thxauth.Authenticated[model.User](),
 					thxauth.RedirectUnauthorized(routes.Public().GetLogin().Path()),
 					thxauth.RedirectWithCurrentPath(public.ParamPath),
 				),
@@ -70,7 +71,7 @@ func authMiddleware(next http.Handler) http.Handler {
 		cookie, err := req.Cookie("auth")
 
 		if err == nil && cookie.Value == "logged-in" {
-			req = req.WithContext(thx.SetAuth(req.Context(), model.User{1, "User"}))
+			req = req.WithContext(thx.SetAuth(req.Context(), model.User{ID: 1, Name: "User", Role: "admin"}))
 		}
 
 		next.ServeHTTP(res, req)

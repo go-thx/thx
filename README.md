@@ -35,7 +35,7 @@ thx handles all of that so your handlers stay focused on business logic:
 - **Automatic partial rendering** — HTMX requests skip layouts, boosted requests get full pages, `Vary` headers are set correctly
 - **Layout composition** — nest layouts declaratively with `WithLayout`, no manual wrapping
 - **HTMX integration** — full request/response header coverage via `ctx.HTMX()` with fluent swap and trigger builders
-- **Auth guards** — `auth.WithGuard` protects route groups with middleware, handles redirects
+- **Auth guards** — composable authorization rules on route groups and single routes, with 401/403 redirects
 - **OOB swaps** — update multiple page sections in a single response with `SwapOOB`
 - **SSE and WebSocket** — first-class route types with HTMX 4.0 envelope support
 - **Result types** — explicit `Render`, `JSON`, `Raw`, `Status().Empty()` — no silent behavior
@@ -134,15 +134,91 @@ HTMX partial requests automatically skip the layout and return just the form fra
 
 ### Protected routes
 
+Your own middleware decides who the user is and puts them on the context with `thx.SetAuth`. thx never touches sessions, tokens, or passwords — it only enforces what you decide.
+
 ```go
 handler := thx.New(
     thx.Get("/login", getLogin),
     thx.Post("/login", postLogin),
 
     auth.WithGuard("/dashboard", dashboardRoutes(),
+        auth.Authenticated[model.User](),
         auth.RedirectUnauthorized("/login"),
         auth.RedirectWithCurrentPath("next"),
     ),
+)
+```
+
+Unauthenticated requests get a 401, or a redirect if one is configured. HTMX requests are redirected via `HX-Redirect`, so the login page replaces the document instead of being swapped into a fragment.
+
+### Authorization rules
+
+A `Rule` decides whether an authenticated subject may proceed. It returns `nil` to allow, `auth.Forbidden(reason)` to deny with a 403, and any other error to signal that the decision could not be made at all — which becomes a 500, never a silent denial.
+
+```go
+type Rule[T any] func(ctx thx.Context, subject T) error
+```
+
+Rules compose with `auth.All`, `auth.Any`, and `auth.Not`. `auth.Check` builds one from a plain predicate:
+
+```go
+var isAdmin = auth.Check(func(u model.User) bool { return u.Role == "admin" }, "admin only")
+
+func hasCredit(ctx thx.Context, u model.User) error {
+    balance, err := billing.Balance(ctx, u.ID)
+    if err != nil {
+        return err // 500 — not a denial
+    }
+    if balance <= 0 {
+        return auth.Forbidden("no credit left")
+    }
+    return nil
+}
+
+auth.WithGuard("/admin", adminRoutes(), auth.All(isAdmin, hasCredit))
+```
+
+Rules attach at two levels:
+
+| | Guard (`auth.WithGuard`) | Route (`auth.Get`, `auth.Route`) |
+| --- | --- | --- |
+| Runs | as middleware, before routing | inside the matched route |
+| Covers | every path under the prefix, including 404s | that one route |
+| `ctx.Param` | not yet parsed — empty | available |
+
+So coarse gating belongs on the guard, and anything that depends on a path parameter belongs on the route:
+
+```go
+func ownsUser(ctx thx.Context, u model.User) error {
+    if ctx.Param("id") != strconv.Itoa(u.ID) {
+        return auth.Forbidden("not your account")
+    }
+    return nil
+}
+
+thx.Get("/users/{id}", auth.Get(c.getUser, ownsUser))
+```
+
+Route-level denials reuse the enclosing guard's denial handling, so a `RedirectForbidden` or `OnForbidden` configured once applies everywhere inside it:
+
+```go
+auth.WithGuard("/dashboard", dashboardRoutes(), isAdmin,
+    auth.OnForbidden(func(ctx thx.Context, err error) thx.Result {
+        return thx.Status(http.StatusForbidden).Render(ctx, deniedPage(auth.Reason(err)))
+    }),
+)
+```
+
+Because the guard is middleware, it cannot apply layouts to that page — a denial rendered from the guard is a bare fragment. For a fully laid-out 403, redirect to a real route instead, or deny at the route level where layouts are in scope.
+
+Application code usually aliases the type parameter away once:
+
+```go
+package auth // your app's package
+
+type (
+    Context = thxauth.Context[model.User]
+    Rule    = thxauth.Rule[model.User]
 )
 ```
 
