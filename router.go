@@ -40,7 +40,7 @@ func New(routes ...Route) http.Handler {
 		route.Apply(router)
 	}
 
-	var handler http.Handler = wrapMux(mux, func() func(http.ResponseWriter, *http.Request) {
+	handler := wrapMux(mux, func() func(http.ResponseWriter, *http.Request) {
 		return router.notFoundHandler
 	})
 

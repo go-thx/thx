@@ -4,3 +4,6 @@
 .ide
 internal/test/.airtmp
 node_modules
+*.test
+*.prof
+coverage.txt
