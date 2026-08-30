@@ -20,6 +20,17 @@
     &nbsp;
 </p>
 
+<p align="center">
+    <a href="https://github.com/go-thx/thx/actions/workflows/tests_codecov.yml"><img src="https://github.com/go-thx/thx/actions/workflows/tests_codecov.yml/badge.svg" alt="tests"></a>
+    &nbsp;
+    <a href="https://codecov.io/gh/go-thx/thx"><img src="https://codecov.io/gh/go-thx/thx/branch/main/graph/badge.svg" alt="codecov"></a>
+    &nbsp;
+    <a href="https://pkg.go.dev/github.com/go-thx/thx"><img src="https://pkg.go.dev/badge/github.com/go-thx/thx.svg" alt="Go Reference"></a>
+    &nbsp;
+    <a href="https://goreportcard.com/report/github.com/go-thx/thx"><img src="https://goreportcard.com/badge/github.com/go-thx/thx" alt="Go Report Card"></a>
+    &nbsp;
+</p>
+
 ## About
 
 This library is a companion to the already awesome libraries go-templ and htmx.
