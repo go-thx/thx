@@ -105,11 +105,18 @@ type cacheEntry struct {
 	expires time.Time
 }
 
+// defaultBuildTimeout bounds a detached CachedPartial build. The build no
+// longer dies with the request, so it needs its own deadline — otherwise a hung
+// source would hold the single-flight slot, and every waiting request with it,
+// indefinitely.
+const defaultBuildTimeout = 30 * time.Second
+
 // CachedOption configures CachedPartial.
 type CachedOption func(*cachedConfig)
 
 type cachedConfig struct {
 	cacheControl bool
+	buildTimeout time.Duration
 }
 
 // WithCacheControl makes CachedPartial emit a
@@ -121,12 +128,27 @@ func WithCacheControl() CachedOption {
 	}
 }
 
+// WithBuildTimeout overrides how long a detached build may run before its
+// context is cancelled. Defaults to 30 seconds. A non-positive duration leaves
+// the default in place.
+func WithBuildTimeout(timeout time.Duration) CachedOption {
+	return func(c *cachedConfig) {
+		if timeout > 0 {
+			c.buildTimeout = timeout
+		}
+	}
+}
+
 // CachedPartial caches the rendered bytes of a partial, keyed by a
 // request-derived key (e.g. locale), and refreshes them every ttl.
 //
-// Unlike Cached, the factory receives the request context, so it can load
-// data with the live request context on a cache miss, and it may return an
-// error — which is surfaced to the caller (HTTP 500) and never cached. Output
+// Unlike Cached, the factory receives a context, so it can load data on a
+// cache miss, and it may return an error — which is surfaced to the caller
+// (HTTP 500) and never cached. That context carries the request's values but
+// is detached from its cancellation, so an aborted fetch (navigation, reload,
+// HTMX swap) cannot cancel a build the whole TTL window — and every other
+// caller waiting on the same flight — depends on. It is bounded by its own
+// timeout instead; see WithBuildTimeout. Output
 // is cached as bytes rather than as a component, so consumers that bind their
 // locale at view-context construction stay correct as long as the key includes
 // the locale.
@@ -161,7 +183,7 @@ func CachedPartial(
 	factory func(context.Context) (templ.Component, error),
 	opts ...CachedOption,
 ) func(Context) Result {
-	var cfg cachedConfig
+	cfg := cachedConfig{buildTimeout: defaultBuildTimeout}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -198,12 +220,15 @@ func CachedPartial(
 				return e.body, nil
 			}
 
-			comp, err := factory(ctx)
+			buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.buildTimeout)
+			defer cancel()
+
+			comp, err := factory(buildCtx)
 			if err != nil {
 				return nil, err
 			}
 			var buf bytes.Buffer
-			if err := comp.Render(ctx, &buf); err != nil {
+			if err := comp.Render(buildCtx, &buf); err != nil {
 				return nil, err
 			}
 			body := buf.Bytes()

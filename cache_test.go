@@ -237,3 +237,73 @@ func TestCachedPartialNoCacheControlByDefault(t *testing.T) {
 		t.Fatalf("Cache-Control set unexpectedly: %q", got)
 	}
 }
+
+func cancelledContext() Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/", nil).WithContext(ctx)
+	return internal.NewContext(req, httptest.NewRecorder())
+}
+
+func TestCachedPartialBuildSurvivesRequestCancel(t *testing.T) {
+	render := CachedPartial(time.Minute,
+		func(context.Context) string { return "k" },
+		func(ctx context.Context) (templ.Component, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return templ.ComponentFunc(func(ctx context.Context, w io.Writer) error {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				_, err := io.WriteString(w, "built")
+				return err
+			}), nil
+		},
+	)
+
+	if got := writeBody(t, render(cancelledContext())); got != "built" {
+		t.Fatalf("body: %q", got)
+	}
+}
+
+func TestCachedPartialBuildTimeout(t *testing.T) {
+	render := CachedPartial(time.Minute,
+		func(context.Context) string { return "k" },
+		func(ctx context.Context) (templ.Component, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		WithBuildTimeout(20*time.Millisecond),
+	)
+
+	res := render(testContext())
+	err := res.WriteResult(httptest.NewRecorder())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestCachedPartialBuildKeepsViewContext(t *testing.T) {
+	ctx := testContext()
+
+	render := CachedPartial(time.Minute,
+		func(context.Context) string { return "k" },
+		func(buildCtx context.Context) (templ.Component, error) {
+			if got := internal.ViewContext(buildCtx); got != ctx {
+				t.Errorf("ViewContext in factory = %v, want the request context", got)
+			}
+			return templ.ComponentFunc(func(renderCtx context.Context, w io.Writer) error {
+				if got := internal.ViewContext(renderCtx); got != ctx {
+					t.Errorf("ViewContext in render = %v, want the request context", got)
+				}
+				_, err := io.WriteString(w, "ok")
+				return err
+			}), nil
+		},
+	)
+
+	if got := writeBody(t, render(ctx)); got != "ok" {
+		t.Fatalf("body: %q", got)
+	}
+}
